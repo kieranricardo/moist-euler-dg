@@ -1,6 +1,5 @@
 from matplotlib import pyplot as plt
 import matplotlib.animation as animation
-from moist_euler_dg.euler_2D import Euler2D
 from moist_euler_dg.dry_euler_2D import DryEuler2D
 from matplotlib.animation import FFMpegWriter as MovieWriter
 import numpy as np
