@@ -529,6 +529,11 @@ class DryEuler2D:
 
         v_k -= self.g
 
+        if verbose:
+            time_deriv = {'h': h_k, 'u': u_k, 'v': v_k, 'hs': s_k}
+            for name in time_deriv.keys():
+                print(f'd{name}/dt abs max: {abs(time_deriv[name]).max()}.')
+
         return u_k, v_k, h_k, s_k
 
     def ddx(self, q):
