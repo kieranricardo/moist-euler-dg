@@ -1,8 +1,7 @@
 import numpy as np
-from matplotlib import pyplot as plt
 from moist_euler_dg.equilibrium_euler_2D import EquilibriumEuler2D
 
-
+# TODO: saturation vapour pressure comparison?
 
 angle = 0 * (np.pi / 180)
 solver = EquilibriumEuler2D(
@@ -11,12 +10,8 @@ solver = EquilibriumEuler2D(
     dtype=np.float64, angle=angle
 )
 
-g = 9.81
-b = 300
-dexdy = -g / 300
 density = 1.2
 p = 1_00_000
-
 qw = 0.2
 qd = 1.0 - qw
 

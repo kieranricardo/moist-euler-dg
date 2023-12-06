@@ -10,8 +10,8 @@ class EquilibriumEuler2D:
 
     def __init__(
             self, xrange, yrange, poly_order, nx, ny,
-            g, eps, device='cpu', solution=None, a=0.0, dtype=np.float32,
-            tau=0, angle=0.0, tau_func=lambda t, dt: t, passive=False, **kwargs,
+            g, eps, device='cpu', solution=None, a=0.0, dtype=np.float64,
+            angle=0.0, upwind=True, **kwargs,
     ):
         self.time = 0
         self.poly_order = poly_order
@@ -23,27 +23,24 @@ class EquilibriumEuler2D:
         self.state = dict()
         self.potential_temperature = self.tmp1 = self.tmp2 = self.qv = self.p = None
         self.moist_pt = None
+        self.gibbs_error = None
 
-        self.energy_list = []
-        self.entropy_list = []
-        self.total_mass_list = []
-        self.water_mass_list = []
-        self.total_entropy_list = []
-        self.entropy_variance_list = []
-        self.water_variant_list = []
-        self.time_list = []
+        self.diagnostics = dict((name, []) for name in (
+            'energy', 'entropy', 'mass', 'water', 'vapour',
+            'entropy_variance', 'water_variance', 'gibbs_error',
+            'dEdt', 'time',
+            )
+        )
 
         self.g = g
         self.f = 0
         self.eps = eps
         self.a = a
-        self.tau = tau
         self.solution = solution
         self.dtype = dtype
         self.xperiodic = True
         self.yperiodic = False
-        self.tau_func = tau_func
-        self.passive = passive
+        self.upwind = upwind
 
         # dry quantities
         self.cpd = 1_004.0
@@ -219,19 +216,22 @@ class EquilibriumEuler2D:
         # horizontal periodic BC
         # vertical wall BC
         for name in self.state.keys():
-            if name != 'v':
-                self.right_state[name][:, -1] = state[name][:, 0, :, 0]
-                self.left_state[name][:, 0] = state[name][:, -1, :, -1]
+            self.right_state[name][:, -1] = state[name][:, 0, :, 0]
+            self.left_state[name][:, 0] = state[name][:, -1, :, -1]
 
     def time_step(self, dt=None, order=3, forcing=None):
 
-        self.energy_list.append(self.integrate(self.energy()))
-        self.total_mass_list.append(self.state['h'])
-        self.water_mass_list.append(self.state['hqw'])
-        self.total_entropy_list.append(self.state['hs'])
-        self.entropy_variance_list.append(self.integrate(self.variance(self.state['hs'])))
-        self.water_variant_list.append(self.integrate(self.variance(self.state['hqw'])))
-        self.time_list.append(self.time)
+
+        self.diagnostics['energy'].append(self.integrate(self.energy()))
+        self.diagnostics['mass'].append(self.state['h'])
+        self.diagnostics['water'].append(self.state['hqw'])
+        self.diagnostics['entropy'].append(self.state['hs'])
+        self.diagnostics['entropy_variance'].append(self.integrate(self.variance(self.state['hs'])))
+        self.diagnostics['water_variance'].append(self.integrate(self.variance(self.state['hqw'])))
+        self.diagnostics['vapour'].append(self.integrate(self.state['h'] * self.qv))
+        self.diagnostics['gibbs_error'].append(self.gibbs_error)
+        self.diagnostics['dEdt'].append(self.integrate(self.get_dEdt()))
+        self.diagnostics['time'].append(self.time)
 
         if dt is None:
             speed = self.wave_speed(self.state)
@@ -393,11 +393,6 @@ class EquilibriumEuler2D:
             up_die_d[name][-1] = die_d[name][-1, :, -1, :]
             down_die_d[name][0] = die_d[name][0, :, 0, :]
 
-        # _, left_die_d, *_ = self.get_thermodynamics_quantities(self.left_state)
-        # _, right_die_d, *_ = self.get_thermodynamics_quantities(self.right_state)
-        # _, up_die_d, *_ = self.get_thermodynamics_quantities(self.up_state)
-        # _, down_die_d, *_ = self.get_thermodynamics_quantities(self.down_state)
-
         ### boundary fluxes
 
         h_up_flux_y, h_up_flux_x = self.hflux(u_up, v_up, h_up, hs_up)
@@ -418,10 +413,7 @@ class EquilibriumEuler2D:
         ###  handle h
         h_yflux, h_xflux = self.hflux(u, v, h, hs)
 
-        div = torch.einsum('fgcd,abcd->fgab', h_xflux, self.ddxi) * self.dxidx
-        div += torch.einsum('fgcd,abcd->fgab', h_xflux, self.ddeta) * self.detadx
-        div += torch.einsum('fgcd,abcd->fgab', h_yflux, self.ddxi) * self.dxidy
-        div += torch.einsum('fgcd,abcd->fgab', h_yflux, self.ddeta) * self.detady
+        div = self.ddx(h_xflux) + self.ddy(h_yflux)
         out = -self.w * self.J * div
 
         h_flux_vert = 0.5 * (h_up_flux + h_down_flux) #- self.a * c_ve * (self.h_up - self.h_down)
@@ -454,16 +446,14 @@ class EquilibriumEuler2D:
         uv_flux_vert = 0.5 * (uv_up_flux + uv_down_flux) - self.a * (c_ve / h_ve) * diff
 
         # wall boundaries
-        uv_flux_vert[-1, ...] = (uv_down_flux - self.a * (c_ve / h_ve) * diff)[-1, ...]
-        uv_flux_vert[0, ...] = (uv_up_flux - self.a * (c_ve / h_ve) * diff)[0, ...]
+        uv_flux_vert[-1, ...] = uv_down_flux[-1, ...] #(uv_down_flux - self.a * (c_ve / h_ve) * diff)[-1, ...]
+        uv_flux_vert[0, ...] = uv_up_flux[0, ...] #(uv_up_flux - self.a * (c_ve / h_ve) * diff)[0, ...]
 
         # handle u
         #######
         ###
-        duv_fluxdxi = torch.einsum('fgcd,abcd->fgab', uv_flux, self.ddxi)
-        duv_fluxdeta = torch.einsum('fgcd,abcd->fgab', uv_flux, self.ddeta)
 
-        out = -(duv_fluxdxi * self.dxidx + duv_fluxdeta * self.detadx) * self.J * self.w
+        out = -self.ddx(uv_flux) * self.J * self.w
         out -= -vort * v * self.J * self.w
 
         self.tmp1[:, :, -1] = (uv_flux_vert - uv_down_flux)[1:] * (self.w_x * self.Jx[:, :, -1]) * self.eta_x_down[1:]
@@ -484,7 +474,7 @@ class EquilibriumEuler2D:
         #######
         ###
 
-        out = -(duv_fluxdxi * self.dxidy + duv_fluxdeta * self.detady) * self.J * self.w
+        out = -self.ddy(uv_flux) * self.J * self.w
         out -= vort * u * self.J * self.w
 
         self.tmp1[:, :, -1] = (uv_flux_vert - uv_down_flux)[1:] * (self.w_x * self.Jx[:, :, -1]) * self.eta_y_down[1:]
@@ -520,8 +510,12 @@ class EquilibriumEuler2D:
             dqdy = self.ddy(q)
 
             # upwinded
-            q_hat_horz = 0.5 * (q_right + q_left) - 0.5 * torch.sign(h_flux_horz) * (q_right - q_left)
-            q_hat_vert = 0.5 * (q_up + q_down) - 0.5 * torch.sign(h_flux_vert) * (q_up - q_down)
+            if self.upwind:
+                q_hat_horz = 0.5 * (q_right + q_left) - 0.5 * torch.sign(h_flux_horz) * (q_right - q_left)
+                q_hat_vert = 0.5 * (q_up + q_down) - 0.5 * torch.sign(h_flux_vert) * (q_up - q_down)
+            else:
+                q_hat_horz = 0.5 * (q_right + q_left)
+                q_hat_vert = 0.5 * (q_up + q_down)
 
             # advance tracer
             out = -self.w * self.J * 0.5 * (qdiv + q * div + h_xflux * dqdx + h_yflux * dqdy)
@@ -583,13 +577,17 @@ class EquilibriumEuler2D:
         return self.get_thermodynamics_quantities(self.state)[0]
 
     def get_dEdt(self):
-        ddt = self.solve(self.state)
+        ddt = self.solve(self.state, tracer_option='')
         dkedt = 0.5 * ddt['h'] * (self.state['u'] ** 2 + self.state['v'] ** 2)
+        dkedt += self.state['h'] * (self.state['u'] * ddt['u'] + self.state['v'] * ddt['v'])
 
         dpedt = ddt['h'] * self.g * self.y_tnsr
 
-        diedt = 0
+        ie, die_d, p, qv = self.get_thermodynamics_quantities(self.state)
+        diedt = die_d['h'] * ddt['h'] + die_d['hs'] * ddt['hs'] + die_d['hqw'] * ddt['hqw']
 
+        dEdt = dkedt + dpedt + diedt
+        return dEdt
 
     def get_thermodynamics_quantities(self, state):
         h, hs, hqw = state['h'], state['hs'], state['hqw']
@@ -633,8 +631,8 @@ class EquilibriumEuler2D:
         chemical_potential_v = cv * dTdqv + self.cvv * T + self.Lv0
         chemical_potential_l = cv * dTdql + self.cl * T
 
-        # chemical_potential_i = self.ci * T
 
+        # chemical_potential_i = self.ci * T
         die_d = dict()
         die_d['hs'] = T
         die_d['hqw'] = chemical_potential_v - chemical_potential_d
@@ -667,8 +665,7 @@ class EquilibriumEuler2D:
     def solve_qv_from_p(self, density, qw, p, mathlib=np, verbose=False):
         qv = 1e-3 + 0 * qw
 
-        # todo:
-        for _ in range(10):
+        for _ in range(30):
             qd = 1 - qw
             ql = qw - qv
             R = qv * self.Rv + qd * self.Rd
@@ -694,13 +691,15 @@ class EquilibriumEuler2D:
         if verbose:
             rel_update = abs((val / grad) / qv)
             print('Max relative last update:', rel_update.max())
+            print('Max Gibbs error:', abs(val).max())
 
         return mathlib.minimum(qv, qw)
 
-    def solve_qv_from_entropy(self, density, qw, entropy, mathlib=np, iters=10, qv=None, verbose=False):
+    def solve_qv_from_entropy(self, density, qw, entropy, mathlib=np, iters=10, qv=None, verbose=False, tol=1e-10):
 
         if qv is None:
             qv = 1e-3 + 0 * qw
+            iters = 40
 
         logdensity = mathlib.log(density)
 
@@ -749,13 +748,16 @@ class EquilibriumEuler2D:
             # val = self.gibbs_vapour(T, pv, mathlib=mathlib) - self.gibbs_liquid(T, mathlib=mathlib)
 
             qv = qv - (val / grad)
+            qv = mathlib.maximum(qv, 1e-7 + 0 * qv)
             rel_update = abs((val / grad) / qv).max()
-            if rel_update < 1e-10:
+            if rel_update < tol:
                 break
 
+        self.gibbs_error = abs(val).max()
         if verbose:
             rel_update = abs((val / grad) / qv)
             print('Max relative last update:', rel_update.max())
+            print('Max Gibbs error:', self.gibbs_error)
 
 
         return mathlib.minimum(qv, qw)
@@ -764,6 +766,7 @@ class EquilibriumEuler2D:
 
         if qv is None:
             qv = 1e-3 + 0 * qw
+            iters = 40
 
         for _ in range(iters):
             qd = 1 - qw
@@ -815,6 +818,7 @@ class EquilibriumEuler2D:
 
             qv = qv - (val / grad)
             rel_update = abs((val / grad) / qv).max()
+            qv = mathlib.maximum(qv, 1e-7)
             # if rel_update < 1e-10:
             #     break
 
@@ -823,6 +827,7 @@ class EquilibriumEuler2D:
         if verbose:
             rel_update = abs((val / grad) / qv)
             print('Max relative last update:', rel_update.max())
+            print('Max Gibbs error:', abs(val).max())
 
         return mathlib.minimum(qv, qw)
 
@@ -845,6 +850,25 @@ class EquilibriumEuler2D:
         s = tmp - qd * self.Rd * mathlib.log(self.p0_ex) + qw * self.c1
 
         return s
+
+    def save_restarts(self, fp_prefix):
+        for name, tnsr in self.state.items():
+            np.save(f"{fp_prefix}_{name}.npy", tnsr.numpy())
+
+        for name, vals in self.diagnostics.items():
+            arr = np.array(vals)
+            np.save(f"{fp_prefix}_{name}.npy", arr)
+
+    def load_restarts(self, fp_prefix):
+        names = ['u', 'v', 'h', 'hs', 'hqw']
+        data = (np.load(f"{fp_prefix}_{name}.npy") for name in names)
+        self.set_initial_condition(*data)
+
+        for name in self.diagnostics.keys():
+            arr = np.load(f"{fp_prefix}_{name}.npy")
+            self.diagnostics[name] = list(arr)
+
+
     # def get_moist_pt(self, mathlib=np):
     #     ie, die_d, p, qv = self.get_thermodynamics_quantities(self.state)
     #     T = die_d['hs']
