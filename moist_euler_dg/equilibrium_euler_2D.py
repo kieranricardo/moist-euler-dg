@@ -577,7 +577,7 @@ class EquilibriumEuler2D:
         return self.get_thermodynamics_quantities(self.state)[0]
 
     def get_dEdt(self):
-        ddt = self.solve(self.state, tracer_option='')
+        ddt = self.solve(self.state)
         dkedt = 0.5 * ddt['h'] * (self.state['u'] ** 2 + self.state['v'] ** 2)
         dkedt += self.state['h'] * (self.state['u'] * ddt['u'] + self.state['v'] * ddt['v'])
 
@@ -867,22 +867,3 @@ class EquilibriumEuler2D:
         for name in self.diagnostics.keys():
             arr = np.load(f"{fp_prefix}_{name}.npy")
             self.diagnostics[name] = list(arr)
-
-
-    # def get_moist_pt(self, mathlib=np):
-    #     ie, die_d, p, qv = self.get_thermodynamics_quantities(self.state)
-    #     T = die_d['hs']
-    #
-    #     h, hqw = self.state['h'], self.state['hqw']
-    #     qw = hqw / h
-    #     qd = 1 - qw
-    #     ql = qw - qv
-    #
-    #     pd = qd * h * self.Rd * T
-    #     pv = qv * h * self.Rv * T
-    #
-    #     cp = qd * self.cpd + qv * self.cpv + ql * self.cl
-    #     tmp = cp * mathlib.log(T) + qd * self.Rd * mathlib.log(self.p0_ex / pd) - qv * self.Rv * mathlib.log(pv)
-    #     tmp += qv * (self.c0 - self.c1)
-    #     logout = tmp / (qd * self.cpd + qw * self.cl)
-    #     return mathlib.exp(logout)
