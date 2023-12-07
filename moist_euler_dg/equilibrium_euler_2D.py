@@ -11,7 +11,7 @@ class EquilibriumEuler2D:
     def __init__(
             self, xrange, yrange, poly_order, nx, ny,
             g, eps, device='cpu', solution=None, a=0.0, dtype=np.float64,
-            angle=0.0, upwind=True, **kwargs,
+            angle=0.0, upwind=True, a_bdry=0.0, **kwargs,
     ):
         self.time = 0
         self.poly_order = poly_order
@@ -24,6 +24,7 @@ class EquilibriumEuler2D:
         self.potential_temperature = self.tmp1 = self.tmp2 = self.qv = self.p = None
         self.moist_pt = None
         self.gibbs_error = None
+        self.a_bdry = a_bdry
 
         self.diagnostics = dict((name, []) for name in (
             'energy', 'entropy', 'mass', 'water', 'vapour',
@@ -446,8 +447,8 @@ class EquilibriumEuler2D:
         uv_flux_vert = 0.5 * (uv_up_flux + uv_down_flux) - self.a * (c_ve / h_ve) * diff
 
         # wall boundaries
-        uv_flux_vert[-1, ...] = uv_down_flux[-1, ...] #(uv_down_flux - self.a * (c_ve / h_ve) * diff)[-1, ...]
-        uv_flux_vert[0, ...] = uv_up_flux[0, ...] #(uv_up_flux - self.a * (c_ve / h_ve) * diff)[0, ...]
+        uv_flux_vert[-1, ...] = (uv_down_flux - self.a_bdry * (c_ve / h_ve) * diff)[-1, ...]
+        uv_flux_vert[0, ...] = (uv_up_flux - self.a_bdry * (c_ve / h_ve) * diff)[0, ...]
 
         # handle u
         #######
@@ -687,6 +688,7 @@ class EquilibriumEuler2D:
             val = self.gibbs_vapour(T, pv, mathlib=mathlib) - self.gibbs_liquid(T, mathlib=mathlib)
 
             qv = qv - (val / grad)
+            qv = mathlib.maximum(qv, 1e-7 + 0 * qv)
 
         if verbose:
             rel_update = abs((val / grad) / qv)
