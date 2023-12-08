@@ -2,7 +2,6 @@ import numpy as np
 from moist_euler_dg.equilibrium_euler_2D import EquilibriumEuler2D
 
 # TODO: saturation vapour pressure comparison?
-
 angle = 0 * (np.pi / 180)
 solver = EquilibriumEuler2D(
     (-0.5 , 0.5 ), (0, 1), 3, 2, 2, g=10,
@@ -14,7 +13,6 @@ density = 1.2
 p = 1_00_000
 qw = 0.2
 qd = 1.0 - qw
-
 
 qv = solver.solve_qv_from_p(density, qw, p, verbose=True)
 print('qv:', qv)

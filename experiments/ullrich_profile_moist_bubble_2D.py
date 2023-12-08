@@ -6,7 +6,7 @@ import time
 import os
 import argparse
 
-exp_name = 'noniso-2D-moist-bubble'
+exp_name = 'ullrich-2D-moist-bubble'
 
 parser = argparse.ArgumentParser()
 # Optional argument
@@ -20,10 +20,11 @@ plt.rcParams['font.size'] = '12'
 run_model = True # whether to run model - set false to just plot previous run
 start_idx = -1 # set to 0, 1, 2, 3 to start model from part way through previous run
 dev = 'cpu'
-xlim = 20_000
-ylim = 10_000
+xlim = 10_000
+ylim = 30_000
 
-nx = ny = args.n
+nx = args.n
+ny = 3 * nx
 eps = 0.8
 g = 9.81
 poly_order = 3
@@ -38,23 +39,50 @@ angle = 0 * (np.pi / 180)
 solver = EquilibriumEuler2D(
     (0.0, xlim), (0, ylim), poly_order, nx, ny, g=g,
     eps=eps, device=dev, solution=None, a=0.0,
-    dtype=np.float64, angle=angle, a_bdry=0.5, strong_bcs=False, upwind=True
+    dtype=np.float64, angle=angle, a_bdry=0.5
 )
 
-def initial_condition(xs, ys, solver):
+
+def initial_condition(xs, ys, solver, pert):
 
     u = 0 * ys
     v = 0 * ys
 
-    dry_theta = 300
-    dexdy = -g  / (solver.cpd * dry_theta)
-    ex = 1 + dexdy * ys
-    p = 1_00_000.0 * ex**(solver.cpd / solver.Rd)
-    density = p / (solver.Rd * ex * dry_theta)
+    TE = 310.0
+    TP = 240.0
+    GRAVITY = solver.g
+    T0 = 0.5*(TE+TP)
+    b = 2.0
+    KP = 3.0
+    GAMMA = 0.005
+    P0 = 100000
+    RD = solver.Rd
+
+    A = 1.0/GAMMA
+    B = (TE - TP)/((TE + TP)*TP)
+    C = 0.5*(KP + 2.0)*(TE - TP)/(TE*TP)
+    H = RD*T0/GRAVITY
+
+    fac   = ys/(b*H)
+    fac2  = fac*fac
+    cp    = np.cos(2.0*np.pi/9.0)
+    cpk   = np.power(cp, KP)
+    cpkp2 = np.power(cp, KP+2)
+    fac3  = cpk - (KP/(KP+2.0))*cpkp2
+
+    torr_1 = (A*GAMMA/T0)*np.exp(GAMMA*(ys)/T0) + B*(1.0 - 2.0*fac2)*np.exp(-fac2)
+    torr_2 = C*(1.0 - 2.0*fac2)*np.exp(-fac2)
+
+    int_torr_1 = A*(np.exp(GAMMA*ys/T0) - 1.0) + B*ys*np.exp(-fac2)
+    int_torr_2 = C*ys*np.exp(-fac2)
+
+    tempInv = torr_1 - torr_2*fac3
+    T = 1.0 / tempInv
+    p = P0*np.exp(-GRAVITY*int_torr_1/RD + GRAVITY*int_torr_2*fac3/RD)
+    density = p / (solver.Rd * T)
 
     qw = 0.02 + 0.0 * ys
 
-    print('exner min-max:', ex.min(), ex.max())
     print('Density min-max:', density.min(), density.max())
     print('Pressure min-max:', p.min(), p.max())
 
@@ -70,61 +98,46 @@ def initial_condition(xs, ys, solver):
     s += qv * solver.entropy_vapour(T, qv, density)
     s += ql * solver.entropy_liquid(T)
 
-    # qv2 = solver.solve_qv_from_entropy(density, qw, s, verbose=True)
-    # print('qv min-max:', qv2.min(), qv2.max())
-    # print('qv error:', (abs(qv2 - qv) / qv).max(), '\n')
-    #
-
-    # pertubation
     moist_pt = solver.get_moist_pt(s, qw)
 
     rad_max = 2_000
-    rad = np.sqrt((xs - 0.5 * xlim) ** 2 + (ys - 1.1*rad_max) ** 2)
+    rad = np.sqrt((xs - 0.5 * xlim) ** 2 + (ys - 1.1 * rad_max) ** 2)
     mask = rad < rad_max
-    moist_pt += mask * 2 * (np.cos(np.pi * (rad / rad_max) / 2)**2)
+    moist_pt += mask * pert * (np.cos(np.pi * (rad / rad_max) / 2) ** 2)
 
     s = solver.moist_pt2entropy(moist_pt, qw)
-
-    #
-    # # just for diagnostic info - can remove
-    # qv = solver.solve_qv_from_entropy(density, qw, s, verbose=True)
-    # qd = 1 - qw
-    # ql = qw - qv
-    # R = qv * solver.Rv + qd * solver.Rd
-    # cv = qd * solver.cvd + qv * solver.cvv + ql * solver.cl
-    # cp = qd * solver.cpd + qv * solver.cpv + ql * solver.cl
-    # logT = (1 / cv) * (s + R * np.log(density) + qd * solver.Rd * np.log(solver.Rd * qd) + qv * solver.Rv * np.log(solver.Rv * qv) - qv * solver.c0 - ql * solver.c1)
-    # T = np.exp(logT)
-    #
-    # p = density * R * T
-    #
-    # print('T min-max:', T.min() - 273, T.max() - 273)
-    # print('Density min-max:', density.min(), density.max())
-    # print('Pressure min-max:', p.min(), p.max())
-    # print('qv min-max:', qv.min(), qv.max(), '\n')
 
     hqw = density * qw
     return u, v, density, s * density, hqw, qv
 
 
-run_time = 2000
+run_time = 500
+
+u, v, density, hs, hqw, qv = initial_condition(solver.xs, solver.ys, solver, pert=0.0)
+solver.set_initial_condition(u, v, density, hs, hqw)
+base_moist_pt = solver.get_moist_pt()
+base_entropy = solver.state['hs'] / solver.state['h']
+
+# fig, ax = plt.subplots(1, 1, sharex=True, sharey=True)
+# im = solver.plot_solution(ax, dim=2, plot_func=lambda s: s.project_H1(s.get_moist_pt()))
+# cbar = plt.colorbar(im, ax=ax)
+# cbar.ax.tick_params(labelsize=8)
+# plt.show()
+# exit(0)
 
 if start_idx >= 0:
     solver.load_restarts(f"./data/{exp_name}-n{nx}-p{poly_order}-part-{start_idx}")
     solver.time = (start_idx + 1) * run_time / 4
 else:
-    u, v, density, hs, hqw, qv = initial_condition(
-        solver.xs,
-        solver.ys,
-        solver
-    )
+    u, v, density, hs, hqw, qv = initial_condition(solver.xs, solver.ys, solver, pert=10.0)
     solver.set_initial_condition(u, v, density, hs, hqw)
 
 E0 = solver.integrate(solver.energy()).numpy()
 print('Energy:', E0)
 
-plot_func = lambda s: s.project_H1(s.get_moist_pt())
-plot_func_2 = lambda s: s.project_H1(s.state['hs'] / s.state['h'])
+
+plot_func = lambda s: s.project_H1(s.get_moist_pt() - base_moist_pt)
+plot_func_2 = lambda s: s.project_H1((s.state['hs'] / s.state['h']) - base_entropy)
 
 vmin = vmax = None
 
@@ -150,13 +163,13 @@ for i in range(4):
     solver.load_restarts(f"./data/{exp_name}-n{nx}-p{poly_order}-part-{i}")
 
     ax = axs[i // 2][i % 2]
-    ax.set_xlim(0.25 * xlim, 0.75 * xlim)
+    # ax.set_xlim(0.25 * xlim, 0.75 * xlim)
     im = solver.plot_solution(ax, dim=2, vmin=vmin, vmax=vmax, plot_func=plot_func)
     cbar = plt.colorbar(im, ax=ax)
     cbar.ax.tick_params(labelsize=8)
 
     ax = axs2[i // 2][i % 2]
-    ax.set_xlim(0.25 * xlim, 0.75 * xlim)
+    # ax.set_xlim(0.25 * xlim, 0.75 * xlim)
     im = solver.plot_solution(ax, dim=2, plot_func=plot_func_2)
     cbar = plt.colorbar(im, ax=ax)
     cbar.ax.tick_params(labelsize=8)
@@ -187,16 +200,3 @@ plt.figure(4)
 plt.title("Total water vapour")
 plt.plot(solver.diagnostics['time'], solver.diagnostics['vapour'])
 plt.savefig(f'{plot_dir}/{exp_name}-vapour-n{nx}-p{poly_order}.png')
-
-plt.figure(5)
-plt.title("Gibbs error")
-plt.plot(solver.diagnostics['time'], solver.diagnostics['gibbs_error'])
-plt.savefig(f'{plot_dir}/{exp_name}-gibbs_error-n{nx}-p{poly_order}.png')
-
-plt.figure(6)
-plt.title("dEdt")
-plt.plot(solver.diagnostics['time'], solver.diagnostics['dEdt'])
-plt.savefig(f'{plot_dir}/{exp_name}-dEdt-n{nx}-p{poly_order}.png')
-
-# Relative energy change: -8.678657871011961e-08
-
