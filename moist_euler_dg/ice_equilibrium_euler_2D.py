@@ -6,7 +6,7 @@ from matplotlib import pyplot as plt
 from scipy.interpolate import lagrange
 
 
-class EquilibriumEuler2D:
+class IceEquilibriumEuler2D:
 
     def __init__(
             self, xrange, yrange, poly_order, nx, ny,
@@ -69,9 +69,13 @@ class EquilibriumEuler2D:
         Ls0_ = 2.834e6
         Lf0_ = Ls0_ - Lv0_
 
+        self.Lv0 = 3.1285e6 #Lv0_ + (self.cpv - self.cl) * self.T0
+        self.Ls0 = self.Lv0 # Ls0_ + (self.cpv - self.ci) * self.T0
+        self.Lf0 = self.Ls0 - self.Lv0 # = Lf0 + (self.ci - self.cl) * self.T0
+
         self.Lv0 = Lv0_ + (self.cpv - self.cl) * self.T0
         self.Ls0 = Ls0_ + (self.cpv - self.ci) * self.T0
-        self.Lf0 = self.Ls0 - self.Lv0 # = Lf0 + (self.ci - self.cl) * self.T0
+        self.Lf0 = self.Ls0 - self.Lv0
 
         # self.c0 = self.cpv + (self.Lv0 / self.T0) - self.cpv * np.log(self.T0) + self.Rv * np.log(self.p0)
         # self.c1 = self.cl - self.cl * np.log(self.T0)
@@ -660,7 +664,7 @@ class EquilibriumEuler2D:
         return self.cl * mathlib.log(T) + self.c2
 
     def entropy_air(self, T, qd, density, mathlib=np):
-        return self.cvd * mathlib.log(T) - self.Rd * mathlib.log(qd * density)
+        return self.cvd * mathlib.log(T) - self.Rd * mathlib.log(qd * density * self.Rd)
 
     def gibbs_vapour(self, T, qv, density, mathlib=np):
         return -self.cvv * T * mathlib.log(T / self.T0) + self.Rv * T * mathlib.log(qv * density / self.rho0) + self.Ls0 * (1 - T / self.T0)
@@ -676,12 +680,87 @@ class EquilibriumEuler2D:
         logpsat = mathlib.log(self.p0) + (1 / self.Rv) * tmp
         return mathlib.exp(logpsat)
 
+    def solve_qv_from_entropy(self, density, qw, entropy, mathlib=np, iters=10, qv=None, ql=None, verbose=False, tol=1e-10):
+
+        if qv is None:
+            qv = 1e-3
+
+        # iters = 40
+        logdensity = mathlib.log(density)
+
+        for _ in range(iters):
+            qd = 1 - qw
+            ql = qw - qv
+            qi = 0.0 * qw
+            R = qv * self.Rv + qd * self.Rd
+            cv = qd * self.cvd + qv * self.cvv + ql * self.cl + qi * self.ci
+
+            # majority of time not from logs....? wtf
+            # logh = mathlib.log(density)
+            # logqv = mathlib.log(qv)
+
+            logqv = mathlib.log(qv)
+
+            cvlogT = entropy + R * logdensity + qd * self.Rd * mathlib.log(self.Rd * qd) + qv * self.Rv * logqv
+            cvlogT += -qv * self.c0 - ql * self.c1 - qi * self.c2
+            logT = (1 / cv) * cvlogT
+
+            dlogTdqv = (1 / cv) * (self.Rv * logdensity + self.Rv * logqv + self.Rv - self.c0 + self.c2)
+            dlogTdqv += -(1 / cv) * logT * (self.cvv - self.ci)
+
+            dlogTdql = (1 / cv) * (-self.c1 + self.c2)
+            dlogTdql += -(1 / cv) * logT * (self.cl - self.ci)
+
+            # logT = (1 / cv) * (entropy + R * logdensity + qd * self.Rd * mathlib.log(self.Rd * qd) + qv * self.Rv * mathlib.log(self.Rv * qv) - qv * self.c0 - ql * self.c1)
+            # dlogTdqv = (1 / cv) * (self.Rv * logdensity + self.Rv * mathlib.log(self.Rv * qv) + self.Rv - self.c0 + self.c1)
+            # dlogTdqv += -(1 / cv) * logT * (self.cvv - self.cl)
+
+            T = mathlib.exp(logT)
+            pv = qv * self.Rv * density * T
+            logpv = logqv + np.log(self.Rv) + logdensity + logT
+
+            dTdqv = dlogTdqv * T
+            dTdql = dlogTdql * T
+
+            dpvdqv = self.Rv * density * T + qv * self.Rv * density * dTdqv
+            dpvdql = qv * self.Rv * density * dTdql
+
+            gibbs_v = -self.cpv * T * (logT - np.log(self.T0)) + self.Rv * T * (logpv - np.log(self.p0)) + self.Ls0 * (1 - T / self.T0)
+            gibbs_l = -self.cl * T * (logT - np.log(self.T0)) + self.Lf0 * (1 - T / self.T0)
+
+            dgibbs_vdT = -self.cpv * (logT - np.log(self.T0)) - self.cpv + self.Rv * (logpv - np.log(self.p0)) - self.Ls0 / self.T0
+            dgibbs_ldT = -self.cl * (logT - np.log(self.T0)) - self.cl - self.Lf0 / self.T0
+
+            dgibbs_vdpv = self.Rv * T / pv
+
+            dgibbs_vdqv = dgibbs_vdT * dTdqv + dgibbs_vdpv * dpvdqv
+            dgibbs_ldqv = dgibbs_ldT * dTdqv
+
+            dgibbs_vdql = dgibbs_vdT * dTdql + dgibbs_vdpv * dpvdql
+            dgibbs_ldql = dgibbs_ldT * dTdql
+
+            dgibbs_vdqv -= dgibbs_vdql
+            dgibbs_ldqv -= dgibbs_ldql
+
+            val = (gibbs_v - gibbs_l)
+            grad = dgibbs_vdqv - dgibbs_ldqv
+
+            qv = qv - (val / grad)
+
+            qv = mathlib.maximum(qv, 1e-12 + 0 * qv)
+
+        if verbose:
+            print(f'Gibbs error 1: {(gibbs_v - gibbs_l)}')
+            print(f'T: {T}')
+
+        return qv, ql
+
     def solve_fractions_from_entropy(self, density, qw, entropy, mathlib=np, iters=10, qv=None, ql=None, verbose=False, tol=1e-10):
 
         if qv is None:
             qv = 1e-3
             ql = qw - qv
-            iters = 40
+            # iters = 40
 
         logdensity = mathlib.log(density)
 
@@ -697,11 +776,11 @@ class EquilibriumEuler2D:
 
             logqv = mathlib.log(qv)
 
-            cvlogT = entropy + R * logdensity + qd * self.Rd * mathlib.log(self.Rd * qd) + qv * self.Rv * (logqv + np.log(self.Rv))
+            cvlogT = entropy + R * logdensity + qd * self.Rd * mathlib.log(self.Rd * qd) + qv * self.Rv * logqv
             cvlogT += -qv * self.c0 - ql * self.c1 - qi * self.c2
             logT = (1 / cv) * cvlogT
 
-            dlogTdqv = (1 / cv) * (self.Rv * logdensity + self.Rv * (logqv + np.log(self.Rv)) + self.Rv - self.c0 + self.c2)
+            dlogTdqv = (1 / cv) * (self.Rv * logdensity + self.Rv * logqv + self.Rv - self.c0 + self.c2)
             dlogTdqv += -(1 / cv) * logT * (self.cvv - self.ci)
 
             dlogTdql = (1 / cv) * (-self.c1 + self.c2)
@@ -712,113 +791,89 @@ class EquilibriumEuler2D:
             # dlogTdqv += -(1 / cv) * logT * (self.cvv - self.cl)
 
             T = mathlib.exp(logT)
+            pv = qv * self.Rv * density * T
+            logpv = logqv + np.log(self.Rv) + logdensity + logT
 
             dTdqv = dlogTdqv * T
             dTdql = dlogTdql * T
 
-            gibbs_v = -self.cvv * T * (logT - np.log(self.T0)) + self.Rv * T * (logdensity * logqv - np.log(self.rho0)) + self.Lv0 * (1 - T / self.T0)
+            dpvdqv = self.Rv * density * T + qv * self.Rv * density * dTdqv
+            dpvdql = qv * self.Rv * density * dTdql
+
+
+            gibbs_v = -self.cpv * T * (logT - np.log(self.T0)) + self.Rv * T * (logpv - np.log(self.p0)) + self.Ls0 * (1 - T / self.T0)
             gibbs_l = -self.cl * T * (logT - np.log(self.T0)) + self.Lf0 * (1 - T / self.T0)
             gibbs_i = -self.ci * T * (logT - np.log(self.T0))
 
-            dgibbs_vdT = -self.cvv * (logT - np.log(self.T0)) - self.cvv + self.Rv * (logdensity + logqv - np.log(self.rho0)) - self.Lv0 / self.T0
+            dgibbs_vdT = -self.cpv * (logT - np.log(self.T0)) - self.cpv + self.Rv * (logpv - np.log(self.p0)) - self.Ls0 / self.T0
             dgibbs_ldT = -self.cl * (logT - np.log(self.T0)) - self.cl - self.Lf0 / self.T0
             dgibbs_idT = -self.ci * (logT - np.log(self.T0)) - self.ci
 
-            dgibbs_vdqv = dgibbs_vdT * dTdqv + self.Rv * T * logdensity / qv
+            dgibbs_vdpv = self.Rv * T / pv
+
+            dgibbs_vdqv = dgibbs_vdT * dTdqv + dgibbs_vdpv * dpvdqv
             dgibbs_ldqv = dgibbs_ldT * dTdqv
             dgibbs_idqv = dgibbs_idT * dTdqv
 
-            dgibbs_vdql = dgibbs_vdT * dTdql
+            dgibbs_vdql = dgibbs_vdT * dTdql + dgibbs_vdpv * dpvdql
             dgibbs_ldql = dgibbs_ldT * dTdql
             dgibbs_idql = dgibbs_idT * dTdql
 
-            val = (gibbs_v - gibbs_l)**2 + (gibbs_l - gibbs_i)**2
+            # v1 = (gibbs_v - gibbs_l)
+            # v2 = (gibbs_l - gibbs_i)
+            #
+            # dv1dqv = dgibbs_vdqv - dgibbs_ldqv
+            # dv1dql = dgibbs_vdql - dgibbs_ldql
+            #
+            # dv2dqv = dgibbs_ldqv - dgibbs_idqv
+            # dv2dql = dgibbs_ldql - dgibbs_idql
 
-            dvaldqv = 2 * (gibbs_v - gibbs_l) * (dgibbs_vdqv - dgibbs_ldqv) + 2 * (gibbs_l - gibbs_i) * (dgibbs_ldqv - dgibbs_idqv)
-            dvaldql = 2 * (gibbs_v - gibbs_l) * (dgibbs_vdql - dgibbs_ldql) + 2 * (gibbs_l - gibbs_i) * (dgibbs_ldql - dgibbs_idql)
+            v1 = (gibbs_v - gibbs_i)
+            v2 = (gibbs_l - gibbs_i)
 
-            qv = qv - (val / dvaldqv)
-            ql = ql - (val / dvaldql)
+            dv1dqv = dgibbs_vdqv - dgibbs_idqv
+            dv1dql = dgibbs_vdql - dgibbs_idql
 
-            qv = mathlib.maximum(qv, 1e-7 + 0 * qv)
+            dv2dqv = dgibbs_ldqv - dgibbs_idqv
+            dv2dql = dgibbs_ldql - dgibbs_idql
+
+
+            # jac * [dqv, dql]^T = -[v1, v2]^T
+
+            # jac     = [ dv1dqv dv1dql ]
+            #           [ dv2dqv dv2dql ]
+
+            # inv_jac = [ dv2dql -dv1dql ]
+            #           [-dv2dqv dv1dqv  ]
+
+            det = dv1dqv * dv2dql - dv1dql * dv2dqv
+
+            up1 = -(dv2dql * v1 - dv1dql * v2) / det
+            up2 = -(-dv2dqv * v1 + dv1dqv * v2) /  det
+
+            qv = qv + up1
+            ql = ql + up2
+
+            qv = mathlib.maximum(qv, 1e-12 + 0 * qv)
+            # qv = mathlib.minimum(qv, qw)
+
             ql = mathlib.maximum(ql, 0 * ql)
+            # ql = mathlib.minimum(ql, qw - qv)
 
-            rel_update = max(abs((val / dvaldqv) / qv).max(), abs((val / dvaldql)))
+            rel_update = max(abs(up1 / qv).max(), abs(up2).max())
             if rel_update < tol:
                 break
 
-        self.gibbs_error = abs(val).max()
-
-        return mathlib.minimum(qv, qw)
-
-    def solve_qv_from_enthalpy(self, enthalpy, qw, entropy, mathlib=np, iters=20, qv=None, verbose=False):
-
-        if qv is None:
-            qv = 1e-3 + 0 * qw
-            iters = 40
-
-        for _ in range(iters):
-            qd = 1 - qw
-            ql = qw - qv
-            R = qv * self.Rv + qd * self.Rd
-            cv = qd * self.cvd + qv * self.cvv + ql * self.cl
-            cp = qd * self.cpd + qv * self.cpv + ql * self.cl
-
-            T = (enthalpy - qv * self.Lv0) / cp
-            dTdqv = -(self.Lv0 / cp) - ((enthalpy - qv * self.Lv0) / cp ** 2) * (self.cpv - self.cl)
-
-            logT = mathlib.log(T)
-            logqv = mathlib.log(qv)
-
-            logdensity = (1 / R) * (cv * logT - entropy - qd * self.Rd * mathlib.log(self.Rd * qd) - qv * self.Rv * (logqv + np.log(self.Rv)) + qv * self.c0 + ql * self.c1)
-            density = mathlib.exp(logdensity)
-
-            densitydT = (1 / R) * cv / T
-
-            ddensitydqv = (1 / R) * ((self.cvv - self.cl) * logT - self.Rv * mathlib.log(self.Rv * qv) - self.Rv + self.c0 - self.c1) * density
-            ddensitydqv += -(1 / R) * self.Rv * logdensity * density
-            ddensitydqv += densitydT * dTdqv
-
-            # logT = (1 / cv) * (entropy + R * logdensity + qd * self.Rd * mathlib.log(self.Rd * qd) + qv * self.Rv * mathlib.log(self.Rv * qv) - qv * self.c0 - ql * self.c1)
-            # dlogTdqv = (1 / cv) * (self.Rv * logdensity + self.Rv * mathlib.log(self.Rv * qv) + self.Rv - self.c0 + self.c1)
-            # dlogTdqv += -(1 / cv) * logT * (self.cvv - self.cl)
-
-            p = R * density * T
-            pv = qv * self.Rv * density * T
-            logpv = logqv + np.log(self.Rv) + logdensity + logT
-
-            dpvdqv = qv * self.Rv * density * dTdqv + self.Rv * density * T + qv * self.Rv * ddensitydqv * T
-
-            # dgvdT = -self.cpv * mathlib.log(T / self.T0) - self.cpv + self.Rv * mathlib.log(pv / self.p0) - self.Lv0 / self.T0
-            dgvdT = -self.cpv * (logT - np.log(self.T0)) - self.cpv + self.Rv * (logpv - np.log(self.p0)) - self.Lv0 / self.T0
-            dgvdpv = self.Rv * T / pv
-
-            dgldT = -self.cl * (logT - np.log(self.T0)) - self.cl
-
-            dgvdqv = dgvdT * dTdqv + dgvdpv * dpvdqv
-            dgldqv = dgldT * dTdqv
-
-            grad = dgvdqv - dgldqv
-
-            val = -self.cpv * T * (logT - np.log(self.T0)) + self.Rv * T * (logpv - np.log(self.p0)) + self.Lv0 * (1 - T / self.T0)
-            val -= -self.cl * T * (logT - np.log(self.T0))
-
-            # val = self.gibbs_vapour(T, pv, mathlib=mathlib) - self.gibbs_liquid(T, mathlib=mathlib)
-
-            qv = qv - (val / grad)
-            rel_update = abs((val / grad) / qv).max()
-            qv = mathlib.maximum(qv, 1e-7)
-            # if rel_update < 1e-10:
-            #     break
-
-        rel_update = abs((val / grad) / qv)
-        # print('Max relative last update:', rel_update.max())
         if verbose:
-            rel_update = abs((val / grad) / qv)
-            print('Max relative last update:', rel_update.max())
-            print('Max Gibbs error:', abs(val).max())
+            qi = qw - (ql + qv)
+            print('qv:', qv)
+            print('ql:', ql)
+            print('qi:', qi)
+            print(f'Gibbs error 1: {(gibbs_v - gibbs_l)}')
+            print(f'Gibbs error 2: {(gibbs_l - gibbs_i)}')
+            print('T:', T)
 
-        return mathlib.minimum(qv, qw)
+        return qv, ql
 
     def save_restarts(self, fp_prefix):
         for name, tnsr in self.state.items():
