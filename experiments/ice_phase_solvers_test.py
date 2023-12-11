@@ -33,7 +33,7 @@ solver_e = EquilibriumEuler2D((-0.5 , 0.5 ), (0, 1), 3, 2, 2, g=10, eps=0.2)
 density = 1.2
 qw = 0.02
 qd = 1.0 - qw
-p = 1_00_000 * 0.95
+p = 1_00_000 * 0.90
 
 qv = solver_e.solve_qv_from_p(density, qw, p)
 qd = 1 - qw
@@ -59,47 +59,27 @@ print('T:', T, '\n')
 qv, ql = solver.solve_qv_from_entropy(density, qw, entropy, verbose=True, iters=10, tol=0.0)
 print('qv:', qv, '\n')
 
-qv, ql = solver.solve_fractions_from_entropy(density, qw, entropy, verbose=True, iters=30, tol=0.0)
+qv, ql, qi = solver.solve_fractions_from_entropy(density, qw, entropy, verbose=True, iters=30, tol=0.0)
 
-qi = qw - (qv + ql)
+R = qv * solver.Rv + qd * solver.Rd
 cv = qd * solver.cvd + qv * solver.cvv + ql * solver.cl + qi * solver.ci
 cvlogT = entropy + R * np.log(density) + qd * solver.Rd * np.log(solver.Rd * qd) + qv * solver.Rv * np.log(qv)
 cvlogT += -qv * solver.c0 - ql * solver.c1 - qi * solver.c2
 logT = (1 / cv) * cvlogT
 T = np.exp(logT)
+logpv = np.log(qv) + np.log(solver.Rv) + np.log(density) + logT
 
-print('qv:', qv)
+print('\nqv:', qv)
 print('ql:', ql)
 print('qi:', qi)
 print('T:', T)
 
-exit(0)
-sz = 1000
-qvs_ = np.linspace(1e-10, 0.002, sz)[:, None] * np.ones((1, sz))
-qls_ = np.linspace(0, 1, sz)[None, :] * np.ones((sz, 1))
-qv = qvs_ * qw
-ql = (qw - qv) * qls_
+state = {'h': density, 'hs': density * entropy, 'hqw': density * qw}
+ie, die_d, p, qv, ql, qi = solver.get_thermodynamics_quantities(state, mathlib=np)
 
-val, T = error(solver, density, entropy, qw, qv, ql)
-
-idx = np.argmin(np.ravel(val))
-
-
-print('Brute forced values -----\n')
-print('Val min-max:', val.min() / 1e10, val.max() / 1e10)
-print('Val:', val.min())
-print('qv:', np.ravel(qv)[idx])
-print('ql:', np.ravel(ql)[idx])
-print('T:', np.ravel(T)[idx])
-
-qv = ql = qi = val = None
-
-print('\n\nSolved values -----\n')
-
-qv, ql = solver.solve_fractions_from_entropy(density, qw, entropy, verbose=True, iters=10, tol=0.0)
-val, T = error(solver, density, entropy, qw, qv, ql)
-
-print(f'Gibbs error: {val / 1e10} 10^10')
-print('qv:', qv)
+print('\nqv:', qv)
 print('ql:', ql)
-print('T:', T)
+print('qi:', qi)
+print('T:', die_d['hs'])
+
+exit(0)

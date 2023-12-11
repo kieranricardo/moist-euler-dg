@@ -21,7 +21,7 @@ class IceEquilibriumEuler2D:
         self.down_state = dict()
         self.up_state = dict()
         self.state = dict()
-        self.potential_temperature = self.tmp1 = self.tmp2 = self.qv = self.p = None
+        self.potential_temperature = self.tmp1 = self.tmp2 = self.qv = self.qi = self.p = None
         self.moist_pt = None
         self.gibbs_error = None
         self.a_bdry = a_bdry
@@ -270,9 +270,10 @@ class IceEquilibriumEuler2D:
             raise ValueError(f"order: expected one of [3], found {order}.")
 
         self.time += dt
-        ie, die_d, p, qv = self.get_thermodynamics_quantities(self.state)
+        ie, die_d, p, qv, ql, qi = self.get_thermodynamics_quantities(self.state)
 
         self.qv = qv
+        self.qi = qi
 
     def set_initial_condition(self, u, v, h, hs, hqw):
 
@@ -290,8 +291,9 @@ class IceEquilibriumEuler2D:
             self.down_state[name] = torch.zeros((self.ny + 1, self.nx, self.n), dtype=self.state['u'].dtype).to(self.device)
             self.up_state[name] = torch.zeros((self.ny + 1, self.nx, self.n), dtype=self.state['u'].dtype).to(self.device)
 
-        ie, die_d, p, qv = self.get_thermodynamics_quantities(self.state)
+        ie, die_d, p, qv, ql, qi = self.get_thermodynamics_quantities(self.state)
         self.qv = qv
+        self.qi = qi
 
         self.tmp1 = torch.zeros_like(self.state['h']).to(self.device)
         self.tmp2 = torch.zeros_like(self.state['h']).to(self.device)
@@ -597,54 +599,62 @@ class IceEquilibriumEuler2D:
 
         dpedt = ddt['h'] * self.g * self.y_tnsr
 
-        ie, die_d, p, qv = self.get_thermodynamics_quantities(self.state)
+        _, die_d, *_ = self.get_thermodynamics_quantities(self.state)
         diedt = die_d['h'] * ddt['h'] + die_d['hs'] * ddt['hs'] + die_d['hqw'] * ddt['hqw']
 
         dEdt = dkedt + dpedt + diedt
         return dEdt
 
-    def get_thermodynamics_quantities(self, state):
-        h, hs, hqw = state['h'], state['hs'], state['hqw']
-        s = hs / h
-        qw = hqw / h
+    def get_thermodynamics_quantities(self, state, mathlib=torch):
+        density, hs, hqw = state['h'], state['hs'], state['hqw']
+        entropy = hs / density
+        qw = hqw / density
         qd = 1 - qw
 
-        qv = self.solve_qv_from_entropy(h, qw, s, mathlib=torch, qv=self.qv)
+        qv, ql, qi = self.solve_fractions_from_entropy(density, qw, entropy, mathlib=mathlib, qv=self.qv, qi=self.qi)
 
-        qv = torch.minimum(qv, qw)
-
-        ql = qw - qv
         R = qv * self.Rv + qd * self.Rd
-        cv = qd * self.cvd + qv * self.cvv + ql * self.cl
+        cv = qd * self.cvd + qv * self.cvv + ql * self.cl + qi * self.ci
 
-        logT = (1 / cv) * (s + R * torch.log(h) + qd * self.Rd * torch.log(self.Rd * qd) + qv * self.Rv * torch.log(self.Rv * qv) - qv * self.c0 - ql * self.c1)
-        T = torch.exp(logT)
-        p = h * R * T
+        logqv = mathlib.log(qv)
+        logqd = mathlib.log(qd)
+        logdensity = mathlib.log(density)
+
+        cvlogT = entropy + R * logdensity + qd * self.Rd * (logqd + np.log(self.Rd)) + qv * self.Rv * logqv
+        cvlogT += -qv * self.c0 - ql * self.c1 - qi * self.c2
+        logT = (1 / cv) * cvlogT
+        T = mathlib.exp(logT)
+
+        p = density * R * T
 
         # print('Model T min-max:', T.min(), T.max())
         # print('Model p min-max:', p.min(), p.max())
 
-        specific_ie = cv * T + qv * self.Lv0
-        enthalpy = specific_ie + p / h
-        ie = h * specific_ie
+        specific_ie = cv * T + qv * self.Ls0 + ql * self.Lf0
+        enthalpy = specific_ie + p / density
+        ie = density * specific_ie
 
-        dlogTdqv = (1 / cv) * (self.Rv * torch.log(h) + self.Rv * torch.log(self.Rv * qv) + self.Rv - self.c0)
+        dlogTdqv = (1 / cv) * (self.Rv * logdensity + self.Rv * logqv + self.Rv - self.c0)
         dlogTdqv += -(1 / cv) * logT * self.cvv
         dTdqv = dlogTdqv * T
 
-        dlogTdql = (1 / cv) * (-self.c1)
+        dlogTdql = (1 / cv) * (- self.c1)
         dlogTdql += -(1 / cv) * logT * self.cl
         dTdql = dlogTdql * T
 
-        dlogTdqd = (1 / cv) * (self.Rd * torch.log(h) + self.Rd * torch.log(self.Rd * qd) + self.Rd)
+        dlogTdqi = (1 / cv) * (-self.c2)
+        dlogTdqi += -(1 / cv) * logT * self.ci
+        dTdqi = dlogTdqi * T
+
+        dlogTdqd = (1 / cv) * (self.Rd * logdensity + self.Rd * (logqd + np.log(self.Rd)) + self.Rd)
         dlogTdqd += -(1 / cv) * logT * self.cvd
-        dTdqd = dlogTdqd * T
+        dTdqd = T * dlogTdqd
 
         # these are just the Gibbs functions
         chemical_potential_d = cv * dTdqd + self.cvd * T
-        chemical_potential_v = cv * dTdqv + self.cvv * T + self.Lv0
-        chemical_potential_l = cv * dTdql + self.cl * T
-
+        chemical_potential_v = cv * dTdqv + self.cvv * T + self.Ls0
+        chemical_potential_l = cv * dTdql + self.cl * T + self.Lf0
+        chemical_potential_i = cv * dTdqi + self.ci * T
 
         # chemical_potential_i = self.ci * T
         die_d = dict()
@@ -652,7 +662,7 @@ class IceEquilibriumEuler2D:
         die_d['hqw'] = chemical_potential_v - chemical_potential_d
         die_d['h'] = enthalpy - sum(die_d[name] * state[name] / state['h'] for name in die_d.keys())
 
-        return ie, die_d, p, qv
+        return ie, die_d, p, qv, ql, qi
 
     def entropy_vapour(self, T, qv, density, mathlib=np):
         return self.cvv * mathlib.log(T) - self.Rv * mathlib.log(qv * density) + self.c0
@@ -755,24 +765,20 @@ class IceEquilibriumEuler2D:
 
         return qv, ql
 
-    def solve_fractions_from_entropy(self, density, qw, entropy, mathlib=np, iters=10, qv=None, ql=None, verbose=False, tol=1e-10):
+    def solve_fractions_from_entropy(self, density, qw, entropy, mathlib=np, iters=10, qv=None, qi=None, verbose=False, tol=1e-10):
 
         if qv is None:
             qv = 1e-3
-            ql = qw - qv
+            qi = 0.0
             # iters = 40
 
         logdensity = mathlib.log(density)
 
-        for _ in range(iters):
+        for _ in range(10):
             qd = 1 - qw
-            qi = qw - (qv + ql)
+            ql = qw - (qv + qi)
             R = qv * self.Rv + qd * self.Rd
             cv = qd * self.cvd + qv * self.cvv + ql * self.cl + qi * self.ci
-
-            # majority of time not from logs....? wtf
-            # logh = mathlib.log(density)
-            # logqv = mathlib.log(qv)
 
             logqv = mathlib.log(qv)
 
@@ -780,11 +786,11 @@ class IceEquilibriumEuler2D:
             cvlogT += -qv * self.c0 - ql * self.c1 - qi * self.c2
             logT = (1 / cv) * cvlogT
 
-            dlogTdqv = (1 / cv) * (self.Rv * logdensity + self.Rv * logqv + self.Rv - self.c0 + self.c2)
-            dlogTdqv += -(1 / cv) * logT * (self.cvv - self.ci)
+            dlogTdqv = (1 / cv) * (self.Rv * logdensity + self.Rv * logqv + self.Rv - self.c0 + self.c1)
+            dlogTdqv += -(1 / cv) * logT * (self.cvv - self.cl)
 
-            dlogTdql = (1 / cv) * (-self.c1 + self.c2)
-            dlogTdql += -(1 / cv) * logT * (self.cl - self.ci)
+            dlogTdqi = (1 / cv) * (-self.c2 + self.c1)
+            dlogTdqi += -(1 / cv) * logT * (self.ci - self.cl)
 
             # logT = (1 / cv) * (entropy + R * logdensity + qd * self.Rd * mathlib.log(self.Rd * qd) + qv * self.Rv * mathlib.log(self.Rv * qv) - qv * self.c0 - ql * self.c1)
             # dlogTdqv = (1 / cv) * (self.Rv * logdensity + self.Rv * mathlib.log(self.Rv * qv) + self.Rv - self.c0 + self.c1)
@@ -795,11 +801,10 @@ class IceEquilibriumEuler2D:
             logpv = logqv + np.log(self.Rv) + logdensity + logT
 
             dTdqv = dlogTdqv * T
-            dTdql = dlogTdql * T
+            dTdqi = dlogTdqi * T
 
             dpvdqv = self.Rv * density * T + qv * self.Rv * density * dTdqv
-            dpvdql = qv * self.Rv * density * dTdql
-
+            dpvdqi = qv * self.Rv * density * dTdqi
 
             gibbs_v = -self.cpv * T * (logT - np.log(self.T0)) + self.Rv * T * (logpv - np.log(self.p0)) + self.Ls0 * (1 - T / self.T0)
             gibbs_l = -self.cl * T * (logT - np.log(self.T0)) + self.Lf0 * (1 - T / self.T0)
@@ -815,28 +820,18 @@ class IceEquilibriumEuler2D:
             dgibbs_ldqv = dgibbs_ldT * dTdqv
             dgibbs_idqv = dgibbs_idT * dTdqv
 
-            dgibbs_vdql = dgibbs_vdT * dTdql + dgibbs_vdpv * dpvdql
-            dgibbs_ldql = dgibbs_ldT * dTdql
-            dgibbs_idql = dgibbs_idT * dTdql
+            dgibbs_vdqi = dgibbs_vdT * dTdqi + dgibbs_vdpv * dpvdqi
+            dgibbs_ldqi = dgibbs_ldT * dTdqi
+            dgibbs_idqi = dgibbs_idT * dTdqi
 
-            # v1 = (gibbs_v - gibbs_l)
-            # v2 = (gibbs_l - gibbs_i)
-            #
-            # dv1dqv = dgibbs_vdqv - dgibbs_ldqv
-            # dv1dql = dgibbs_vdql - dgibbs_ldql
-            #
-            # dv2dqv = dgibbs_ldqv - dgibbs_idqv
-            # dv2dql = dgibbs_ldql - dgibbs_idql
-
-            v1 = (gibbs_v - gibbs_i)
+            v1 = (gibbs_v - gibbs_l)
             v2 = (gibbs_l - gibbs_i)
 
-            dv1dqv = dgibbs_vdqv - dgibbs_idqv
-            dv1dql = dgibbs_vdql - dgibbs_idql
+            dv1dqv = dgibbs_vdqv - dgibbs_ldqv
+            dv1dqi = dgibbs_vdqi - dgibbs_ldqi
 
             dv2dqv = dgibbs_ldqv - dgibbs_idqv
-            dv2dql = dgibbs_ldql - dgibbs_idql
-
+            dv2dqi = dgibbs_ldqi - dgibbs_idqi
 
             # jac * [dqv, dql]^T = -[v1, v2]^T
 
@@ -846,34 +841,38 @@ class IceEquilibriumEuler2D:
             # inv_jac = [ dv2dql -dv1dql ]
             #           [-dv2dqv dv1dqv  ]
 
-            det = dv1dqv * dv2dql - dv1dql * dv2dqv
+            det = dv1dqv * dv2dqi - dv1dqi * dv2dqv
 
-            up1 = -(dv2dql * v1 - dv1dql * v2) / det
+            up1 = -(dv2dqi * v1 - dv1dqi * v2) / det
             up2 = -(-dv2dqv * v1 + dv1dqv * v2) /  det
 
-            qv = qv + up1
-            ql = ql + up2
+            qi = qi + up2
 
+            qv = qv + up1 * (qi >= 0.0) - (v1 / dv1dqv) * (qi < 0.0)
+
+            qi = mathlib.maximum(qi, 0 * qi)
             qv = mathlib.maximum(qv, 1e-12 + 0 * qv)
-            # qv = mathlib.minimum(qv, qw)
 
-            ql = mathlib.maximum(ql, 0 * ql)
-            # ql = mathlib.minimum(ql, qw - qv)
-
-            rel_update = max(abs(up1 / qv).max(), abs(up2).max())
+            rel_update = abs(up1 / qv).max()
             if rel_update < tol:
                 break
 
+        qv = mathlib.minimum(qv, qw)
+        qi = mathlib.minimum(qi, qw - qv)
+        ql = qw - (qi + qv)
+
         if verbose:
-            qi = qw - (ql + qv)
             print('qv:', qv)
             print('ql:', ql)
             print('qi:', qi)
             print(f'Gibbs error 1: {(gibbs_v - gibbs_l)}')
             print(f'Gibbs error 2: {(gibbs_l - gibbs_i)}')
+            print(f'Gibbs v: {gibbs_v}')
             print('T:', T)
+            print('rel update:', rel_update)
 
-        return qv, ql
+
+        return qv, ql, qi
 
     def save_restarts(self, fp_prefix):
         for name, tnsr in self.state.items():
