@@ -33,7 +33,7 @@ solver_e = EquilibriumEuler2D((-0.5 , 0.5 ), (0, 1), 3, 2, 2, g=10, eps=0.2)
 density = 1.2
 qw = 0.02
 qd = 1.0 - qw
-p = 1_00_000 * 0.90
+p = 1_00_000 * 0.95
 
 qv = solver_e.solve_qv_from_p(density, qw, p)
 qd = 1 - qw
@@ -74,12 +74,11 @@ print('ql:', ql)
 print('qi:', qi)
 print('T:', T)
 
-state = {'h': density, 'hs': density * entropy, 'hqw': density * qw}
-ie, die_d, p, qv, ql, qi = solver.get_thermodynamics_quantities(state, mathlib=np)
+# state = {'h': density, 'hs': density * entropy, 'hqw': density * qw}
+# ie, die_d, p, qv, ql, qi = solver.get_thermodynamics_quantities(state, mathlib=np)
+#
+# print('\nqv:', qv)
+# print('ql:', ql)
+# print('qi:', qi)
+# print('T:', die_d['hs'])
 
-print('\nqv:', qv)
-print('ql:', ql)
-print('qi:', qi)
-print('T:', die_d['hs'])
-
-exit(0)
