@@ -846,6 +846,111 @@ class IceEquilibriumEuler2D:
 
 
         return qv, ql, qi
+    def solve_fractions_from_enthalpy(
+            self, enthalpy, qw, entropy, mathlib=np, iters=10, qv=None, qi=None, verbose=False, tol=1e-10
+    ):
+
+        qd = 1 - qw
+
+        if qv is None:
+            qv = mathlib.minimum(1e-3 + 0.0 * qw, qw)
+            iters = 40
+
+        if qi is None:
+            qi = 0.0 * qw
+            iters = 40
+
+        ql = qw - (qv + qi)
+
+        for _ in range(100):
+
+            R = qv * self.Rv + qd * self.Rd
+            cv = qd * self.cvd + qv * self.cvv + ql * self.cl + qi * self.ci
+            cp = qd * self.cpd + qv * self.cpv + ql * self.cl + qi * self.ci
+
+            T = (enthalpy - qv * self.Ls0 - ql * self.Lf0) / cp
+
+            dTdqv = -(self.Ls0 / cp) - (T / cp) * self.cpv
+            dTdql = -(self.Lf0 / cp) - (T / cp) * self.cl
+            dTdqi = -(self.Ls0 / cp) - (T / cp) * self.ci
+
+            logT = mathlib.log(T)
+            logqv = mathlib.log(qv)
+
+            logdensity = (1 / R) * (cv * logT - entropy - qd * self.Rd * mathlib.log(self.Rd * qd)
+                                    - qv * self.Rv * logqv + qv * self.c0 + ql * self.c1 + qi * self.c2)
+            density = mathlib.exp(logdensity)
+
+
+            densitydT = (1 / R) * cv / T
+
+            ddensitydqv = (1 / R) * (self.cvv * logT - self.Rv * logqv - self.Rv + self.c0) * density
+            ddensitydqv += -(1 / R) * self.Rv * logdensity * density
+            ddensitydqv += densitydT * dTdqv
+
+            ddensitydql = (1 / R) * (self.cl * logT + self.c1) * density
+            ddensitydql += densitydT * dTdql
+
+            ddensitydqi = (1 / R) * (self.ci * logT + self.c2) * density
+            ddensitydqi += densitydT * dTdqi
+
+            p = R * density * T
+            pv = qv * self.Rv * density * T
+            logpv = logqv + np.log(self.Rv) + logdensity + logT
+
+            dpvdqv = qv * self.Rv * density * dTdqv + self.Rv * density * T + qv * self.Rv * ddensitydqv * T
+            dpvdql = qv * self.Rv * density * dTdql + qv * self.Rv * ddensitydql * T
+            dpvdqi = qv * self.Rv * density * dTdqi + qv * self.Rv * ddensitydqi * T
+
+            logT = mathlib.log(T)
+            logpv = mathlib.log(pv)
+
+            gibbs_v = -self.cpv * T * (logT - np.log(self.T0)) + self.Rv * T * (logpv - np.log(self.p0)) + self.Ls0 * (1 - T / self.T0)
+            gibbs_l = -self.cl * T * (logT - np.log(self.T0)) + self.Lf0 * (1 - T / self.T0)
+            gibbs_i = -self.ci * T * (logT - np.log(self.T0))
+
+            dgibbs_vdT = -self.cpv * (logT - np.log(self.T0)) - self.cpv + self.Rv * (logpv - np.log(self.p0)) - self.Ls0 / self.T0
+            dgibbs_ldT = -self.cl * (logT - np.log(self.T0)) - self.cl - self.Lf0 / self.T0
+            dgibbs_idT = -self.ci * (logT - np.log(self.T0)) - self.ci
+
+            dgibbs_vdpv = self.Rv * T / pv
+
+            dgibbs_vdqv = dgibbs_vdT * dTdqv + dgibbs_vdpv * dpvdqv
+            dgibbs_ldqv = dgibbs_ldT * dTdqv
+            dgibbs_idqv = dgibbs_idT * dTdqv
+
+            dgibbs_vdql = dgibbs_vdT * dTdql + dgibbs_vdpv * dpvdql
+            dgibbs_ldql = dgibbs_ldT * dTdql
+            dgibbs_idql = dgibbs_idT * dTdql
+
+            dgibbs_vdqi = dgibbs_vdT * dTdqi + dgibbs_vdpv * dpvdqi
+            dgibbs_ldqi = dgibbs_ldT * dTdqi
+            dgibbs_idqi = dgibbs_idT * dTdqi
+
+            # if thawed set qi = 0, and solve for gibbs_vapour = gibbs_liquid
+            thawed = (T > self.T0) * 1.0
+            val = (gibbs_v - gibbs_l)
+            dvaldqv = (dgibbs_vdqv - dgibbs_ldqv) - (dgibbs_vdql - dgibbs_ldql)
+            update = -thawed * val / dvaldqv
+
+            # if frozen set ql = 0, and solve for gibbs_vapour = gibbs_ice
+            frozen = (T < self.T0) * 1.0
+            val = (gibbs_v - gibbs_i)
+            dvaldqv = (dgibbs_vdqv - dgibbs_idqv) - (dgibbs_vdqi - dgibbs_idqi)
+            update = update - frozen * val / dvaldqv
+
+            qv = qv + update
+            qv = mathlib.maximum(qv, 1e-12 + 0 * qw)
+
+            qi = frozen * (qw - qv)
+            ql = qw - (qv + qi)
+
+        # TODO: faster way to solve for single phase
+        qv = mathlib.minimum(qv, qw)
+        qi = frozen * (qw - qv)
+        ql = qw - (qv + qi)
+
+        return qv, ql, qi
 
     def solve_fractions_from_entropy(self, density, qw, entropy, mathlib=np, iters=20, qv=None, ql=None, qi=None, verbose=False, tol=1e-10):
 
