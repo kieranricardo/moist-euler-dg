@@ -767,23 +767,17 @@ class IceEquilibriumEuler2D:
 
         return qv, ql
 
-    def solve_fractions_from_p(self, density, qw, p, mathlib=np, iters=10, qv=None, qi=None, verbose=False, tol=1e-10):
+    def solve_fractions_from_p(self, density, qw, p, mathlib=np, iters=10, qv=None, verbose=False, tol=1e-10):
+
+        qd = 1 - qw
 
         if qv is None:
-            qv = 1e-3
-            qi = 0.0
+            qv = mathlib.minimum(1e-3 + 0.0 * qw, qw)
             iters = 40
 
-        logdensity = mathlib.log(density)
-
-        # check for all three phases present
-        # T = self.T0
-
         for _ in range(iters):
-            qd = 1 - qw
-            ql = qw - (qv + qi)
+
             R = qv * self.Rv + qd * self.Rd
-            cv = qd * self.cvd + qv * self.cvv + ql * self.cl + qi * self.ci
 
             T = p / (density * R)
             pv = density * self.Rv * qv * T
@@ -808,46 +802,37 @@ class IceEquilibriumEuler2D:
             dgibbs_ldqv = dgibbs_ldT * dTdqv
             dgibbs_idqv = dgibbs_idT * dTdqv
 
-            dgibbs_vdqi = dgibbs_vdT * 0.0 + dgibbs_vdpv * 0.0
-            dgibbs_ldqi = dgibbs_ldT * 0.0
-            dgibbs_idqi = dgibbs_idT * 0.0
 
-            v1 = (gibbs_v - gibbs_l)
-            v2 = (gibbs_l - gibbs_i)
+            # if thawed set qi = 0, and solve for gibbs_vapour = gibbs_liquid
+            thawed = (T > self.T0) * 1.0
+            val = (gibbs_v - gibbs_l)
+            dvaldqv = (dgibbs_vdqv - dgibbs_ldqv)
+            update = -thawed * val / dvaldqv
 
-            dv1dqv = dgibbs_vdqv - dgibbs_ldqv
-            dv1dqi = dgibbs_vdqi - dgibbs_ldqi
+            # if frozen set ql = 0, and solve for gibbs_vapour = gibbs_ice
+            frozen = (T < self.T0) * 1.0
+            val = (gibbs_v - gibbs_i)
+            dvaldqv = (dgibbs_vdqv - dgibbs_idqv)
+            update = update - frozen * val / dvaldqv
 
-            dv2dqv = dgibbs_ldqv - dgibbs_idqv
-            dv2dqi = dgibbs_ldqi - dgibbs_idqi
+            qv = qv + update
+            qv = mathlib.maximum(qv, 1e-12 + 0 * qw)
 
-            # jac * [dqv, dql]^T = -[v1, v2]^T
+            # if frozen (and not triple) set qi = qw - qv, if thawed set qi = 0
 
-            # jac     = [ dv1dqv dv1dql ]
-            #           [ dv2dqv dv2dql ]
 
-            # inv_jac = [ dv2dql -dv1dql ]
-            #           [-dv2dqv dv1dqv  ]
-
-            det = dv1dqv * dv2dqi - dv1dqi * dv2dqv
-
-            up1 = -(dv2dqi * v1 - dv1dqi * v2) / det
-            up2 = -(-dv2dqv * v1 + dv1dqv * v2) /  det
-
-            qi = qi + up2
-
-            qv = qv + up1 * (qi >= 0.0) - (v1 / dv1dqv) * (qi < 0.0)
-
-            qi = mathlib.maximum(qi, 0 * qi)
-            qv = mathlib.maximum(qv, 1e-12 + 0 * qv)
-
-            rel_update = abs(up1 / qv).max()
+            rel_update = abs(update / qv).max()
             if rel_update < tol:
                 break
 
         qv = mathlib.minimum(qv, qw)
-        qi = mathlib.minimum(qi, qw - qv)
-        ql = qw - (qi + qv)
+
+        R = qv * self.Rv + qd * self.Rd
+        T = p / (density * R)
+
+        frozen = (T < self.T0)
+        qi = frozen * (qw - qv)
+        ql = qw - (qv + qi)
 
         if verbose:
             print('qv:', qv)
