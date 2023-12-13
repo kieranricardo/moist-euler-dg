@@ -31,11 +31,21 @@ solver_e = EquilibriumEuler2D((-0.5 , 0.5 ), (0, 1), 3, 2, 2, g=10, eps=0.2)
 
 # get a reasonable entropy a ground level
 density = 1.2
-qw = 0.02
-qd = 1.0 - qw
+# qw = 0.02
 p = 1_00_000 * 0.95
 
+qw = solver.rh_to_qw(0.9, p, density)
+qd = 1 - qw
+qv, ql, qi = solver.solve_fractions_from_p(density, 1.2 * qw, p)
+R = qv * solver_e.Rv + qd * solver_e.Rd
+T = p / (density * R)
+print('qv:', qv)
+print('ql:', ql)
+print('qi:', qi)
+print('T:', T)
+exit(0)
 qv = solver_e.solve_qv_from_p(density, qw, p)
+
 qd = 1 - qw
 ql = qw - qv
 R = qv * solver_e.Rv + qd * solver_e.Rd
@@ -45,9 +55,11 @@ entropy = qd * solver_e.entropy_air(T, qd, density)
 entropy += qv * solver_e.entropy_vapour(T, qv, density)
 entropy += ql * solver_e.entropy_liquid(T)
 print('qv:', qv)
+print('ql:', ql)
+# print('qi:', qi)
 print('T:', T)
 print('Entropy:', entropy)
-
+exit(0)
 
 # solver.c0 = solver_e.c0
 entropy = qd * solver.entropy_air(T, qd, density) + qv * solver.entropy_vapour(T, qv, density) + ql * solver.entropy_liquid(T)
@@ -87,6 +99,35 @@ qv, ql, qi = solver.solve_fractions_from_enthalpy(enthalpy, qw, entropy)
 print('Enthalpy solve qv:', qv)
 print('Enthalpy solve ql:', ql)
 print('Enthalpy solve qi:', qi, '\n')
+
+
+##########
+
+enthalpy = 284828.18790717854
+entropy = 2538.5894564493274
+qw = 0.02
+qv, ql, qi = solver.solve_fractions_from_enthalpy(enthalpy, qw, entropy)
+print('Enthalpy solve qv:', qv)
+print('Enthalpy solve ql:', ql)
+print('Enthalpy solve qi:', qi, '\n')
+
+R = qv * solver.Rv + qd * solver.Rd
+cv = qd * solver.cvd + qv * solver.cvv + ql * solver.cl + qi * solver.ci
+cp = qd * solver.cpd + qv * solver.cpv + ql * solver.cl + qi * solver.ci
+
+T = (enthalpy - qv * solver.Ls0 - ql * solver.Lf0) / cp
+print('T:', T)
+logdensity = (1 / R) * (cv * np.log(T) - entropy - qd * solver.Rd * np.log(solver.Rd * qd)
+                        - qv * solver.Rv * np.log(qv) + qv * solver.c0 + ql * solver.c1 + qi * solver.c2)
+density = np.exp(logdensity)
+
+qv, ql, qi = solver.solve_fractions_from_entropy(density, qw, entropy, verbose=False)
+print('Entropy solve qv:', qv)
+print('Entropy solve ql:', ql)
+print('Entropy solve qi:', qi, '\n')
+
+
+
 
 # state = {'h': density, 'hs': density * entropy, 'hqw': density * qw}
 # ie, die_d, p, qv, ql, qi = solver.get_thermodynamics_quantities(state, mathlib=np)

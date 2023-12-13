@@ -29,7 +29,7 @@ class IceEquilibriumEuler2D:
 
         self.diagnostics = dict((name, []) for name in (
             'energy', 'entropy', 'mass', 'water', 'vapour',
-            'entropy_variance', 'water_variance', 'gibbs_error',
+            'entropy_variance', 'water_variance',
             'dEdt', 'time',
             )
         )
@@ -238,6 +238,45 @@ class IceEquilibriumEuler2D:
             self.right_state[name][:, -1] = state[name][:, 0, :, 0]
             self.left_state[name][:, 0] = state[name][:, -1, :, -1]
 
+    def positivity_preserving_limiter(self, in_tnsr):
+        cell_means = (in_tnsr * self.w * self.J).sum(dim=(2, 3), keepdim=True) / (self.w * self.J).sum(dim=(2, 3), keepdim=True)
+        cell_diffs = in_tnsr - cell_means
+
+        cell_mins = in_tnsr.min(dim=3, keepdim=True)[0]
+        cell_mins = cell_mins.min(dim=2, keepdim=True)[0]
+        diff_min = cell_mins - cell_means
+
+        new_min = torch.maximum(1e-7 + 0 * cell_mins, cell_mins)
+        scale = (new_min - cell_means) / diff_min
+
+        out_tnsr = cell_means + scale * cell_diffs
+
+        return out_tnsr, cell_means
+
+    def check_positivity(self, state):
+
+        hqw_limited, hqw_cell_means = self.positivity_preserving_limiter(state['hqw'])
+        state['hqw'] = hqw_limited
+
+        if (hqw_cell_means <= 0).any():
+            print("Negative water cell mean detected")
+            exit(0)
+
+        if (state['hqw'] <= 0).any():
+            print("Negative water mass - limiting failed :( ")
+            exit(0)
+
+        h_limited, h_cell_means = self.positivity_preserving_limiter(state['h'])
+        # state['h'] = h_limited
+
+        if (h_cell_means <= 0).any():
+            print("Negative density cell mean detected")
+            exit(0)
+
+        if (state['h'] <= 0).any():
+            print("Negative density - limiting failed :( ")
+            exit(0)
+
     def time_step(self, dt=None, order=3, forcing=None):
 
 
@@ -248,7 +287,6 @@ class IceEquilibriumEuler2D:
         self.diagnostics['entropy_variance'].append(self.integrate(self.variance(self.state['hs'])))
         self.diagnostics['water_variance'].append(self.integrate(self.variance(self.state['hqw'])))
         self.diagnostics['vapour'].append(self.integrate(self.state['h'] * self.qv))
-        self.diagnostics['gibbs_error'].append(self.gibbs_error)
         self.diagnostics['dEdt'].append(self.integrate(self.get_dEdt()))
         self.diagnostics['time'].append(self.time)
 
@@ -259,13 +297,15 @@ class IceEquilibriumEuler2D:
         if order == 3:
             k1 = self.solve(self.state)
             state1 = {name: self.state[name] + dt * k1[name] for name in self.state.keys()}
+            self.check_positivity(state1)
 
             k2 = self.solve(state1)
             state2 = {name: 0.75 * self.state[name] + 0.25 * (state1[name] + k2[name] * dt) for name in self.state.keys()}
+            self.check_positivity(state2)
 
             k3 = self.solve(state2)
             self.state = {name: (self.state[name] + 2 * (state2[name] + dt * k3[name])) / 3 for name in self.state.keys()}
-
+            self.check_positivity(self.state)
         else:
             raise ValueError(f"order: expected one of [3], found {order}.")
 
@@ -666,6 +706,26 @@ class IceEquilibriumEuler2D:
 
         return ie, die_d, p, qv, ql, qi
 
+    def get_moist_pt(self, s=None, qw=None, mathlib=np):
+        if s is None:
+            s = self.state['hs'] / self.state['h']
+        if qw is None:
+            qw = self.state['hqw'] / self.state['h']
+
+        qd = 1 - qw
+
+        tmp = s + qd * self.Rd * mathlib.log(self.p0_ex) - qw * self.c2
+        logpt = tmp / (qd * self.cpd + qw * self.ci)
+        return mathlib.exp(logpt)
+
+    def moist_pt2entropy(self, pt, qw, mathlib=np):
+        qd = 1 - qw
+        logpt = mathlib.log(pt)
+        tmp = logpt * (qd * self.cpd + qw * self.ci)
+        s = tmp - qd * self.Rd * mathlib.log(self.p0_ex) + qw * self.ci
+
+        return s
+
     def entropy_vapour(self, T, qv, density, mathlib=np):
         return self.cvv * mathlib.log(T) - self.Rv * mathlib.log(qv * density) + self.c0
 
@@ -687,10 +747,26 @@ class IceEquilibriumEuler2D:
     def gibbs_ice(self, T, mathlib=np):
         return -self.ci * T * mathlib.log(T / self.T0)
 
+    def rh_to_qw(self, rh, p, density, mathlib=np):
+
+        R = self.Rd
+        for _ in range(100):
+            T = p / (density * R)
+            pv = self.saturation_pressure(T)
+            qv_sat = pv / (density * self.Rv * T)
+            qv = rh * qv_sat
+            R = (1 - qv) * self.Rd + qv * self.Rv
+
+        # qw = qv # unsaturated
+        return qv
+
     def saturation_pressure(self, T, mathlib=np):
-        tmp = self.cpv * mathlib.log(T / self.T0) + (self.Lv0 / self.T0) - (self.Lv0 / T) - self.cl * mathlib.log(T / self.T0)
-        logpsat = mathlib.log(self.p0) + (1 / self.Rv) * tmp
-        return mathlib.exp(logpsat)
+        logpsat = self.cvv * T * mathlib.log(T / self.T0) - self.Ls0 * (1 - T / self.T0)
+        logpsat += (T <= self.T0) * self.gibbs_ice(T)
+        logpsat += (T > self.T0) * self.gibbs_liquid(T)
+
+        logpsat /= (self.Rv * T)
+        return self.p0 * mathlib.exp(logpsat)
 
     def solve_qv_from_entropy(self, density, qw, entropy, mathlib=np, iters=10, qv=None, ql=None, verbose=False, tol=1e-10):
 
@@ -862,7 +938,7 @@ class IceEquilibriumEuler2D:
 
         ql = qw - (qv + qi)
 
-        for _ in range(100):
+        for _ in range(10):
 
             R = qv * self.Rv + qd * self.Rd
             cv = qd * self.cvd + qv * self.cvv + ql * self.cl + qi * self.ci
@@ -947,6 +1023,13 @@ class IceEquilibriumEuler2D:
 
         # TODO: faster way to solve for single phase
         qv = mathlib.minimum(qv, qw)
+
+        R = qv * self.Rv + qd * self.Rd
+        cv = qd * self.cvd + qv * self.cvv + ql * self.cl + qi * self.ci
+        cp = qd * self.cpd + qv * self.cpv + ql * self.cl + qi * self.ci
+
+        T = (enthalpy - qv * self.Ls0 - ql * self.Lf0) / cp
+        frozen = (T < self.T0) * 1.0
         qi = frozen * (qw - qv)
         ql = qw - (qv + qi)
 
@@ -1077,6 +1160,8 @@ class IceEquilibriumEuler2D:
             ql = qw - (qv + qi)
 
             rel_update = abs(update / qv).max()
+            if rel_update < tol:
+                break
 
         # TODO: faster way to solve for single phase
         qv = mathlib.minimum(qv, qw)
