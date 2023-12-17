@@ -17,7 +17,6 @@ if not os.path.exists('./data'): os.makedirs('./data')
 plt.rcParams['font.size'] = '12'
 
 run_model = True # whether to run model - set false to just plot previous run
-start_idx = -1 # set to 0, 1, 2, 3 to start model from part way through previous run
 dev = 'cpu'
 xlim = 20_000
 ylim = 10_000
@@ -38,7 +37,7 @@ angle = 0 * (np.pi / 180)
 solver = IceEquilibriumEuler2D(
     (0.0, xlim), (0, ylim), poly_order, nx, ny, g=g,
     eps=eps, device=dev, solution=None, a=0.0,
-    dtype=np.float64, angle=angle, a_bdry=0.5
+    dtype=np.float64, angle=angle, upwind=True,
 )
 
 
@@ -87,18 +86,14 @@ def initial_condition(xs, ys, solver):
     return u, v, density, s * density, hqw, qv
 
 
-run_time = 2000
+run_time = 600
 
-if start_idx >= 0:
-    solver.load_restarts(f"./data/{exp_name}-n{nx}-p{poly_order}-part-{start_idx}")
-    solver.time = (start_idx + 1) * run_time / 4
-else:
-    u, v, density, hs, hqw, qv = initial_condition(
-        solver.xs,
-        solver.ys,
-        solver
-    )
-    solver.set_initial_condition(u, v, density, hs, hqw)
+u, v, density, hs, hqw, qv = initial_condition(
+    solver.xs,
+    solver.ys,
+    solver
+)
+solver.set_initial_condition(u, v, density, hs, hqw)
 
 E0 = solver.integrate(solver.energy()).numpy()
 print('Energy:', E0)
@@ -108,12 +103,14 @@ plot_funcs.append(lambda s: s.project_H1(s.state['hs'] / s.state['h']))
 plot_funcs.append(lambda s: s.project_H1(s.get_thermodynamics_quantities(s.state)[3]))
 plot_funcs.append(lambda s: s.project_H1(s.get_thermodynamics_quantities(s.state)[4]))
 plot_funcs.append(lambda s: s.project_H1(s.get_thermodynamics_quantities(s.state)[5]))
+plot_funcs.append(lambda s: s.project_H1(s.state['hqw'] / s.state['h']))
 
 figs_axs = [plt.subplots(2, 2, sharex=True, sharey=True) for _ in plot_funcs]
 
 titles = [
     "Specific entropy",
-    "Water vapour fraction", "Water liquid fraction", "Water ice fraction"
+    "Water vapour fraction", "Water liquid fraction", "Water ice fraction",
+    "Water fraction"
 ]
 
 for title, (fig, ax) in zip(titles, figs_axs):
@@ -122,9 +119,10 @@ for title, (fig, ax) in zip(titles, figs_axs):
 vmin = vmax = None
 
 if run_model:
-    for i in range(start_idx+1, 4):
+    solver.save_restarts(f"./data/{exp_name}-n{nx}-p{poly_order}-part-{0}")
+    for i in range(1, 4):
 
-        tend = solver.time + (run_time / 4)
+        tend = solver.time + (run_time / 3)
         t0 = time.time()
         while solver.time <= tend:
             solver.time_step()

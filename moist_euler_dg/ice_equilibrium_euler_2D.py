@@ -11,7 +11,7 @@ class IceEquilibriumEuler2D:
     def __init__(
             self, xrange, yrange, poly_order, nx, ny,
             g, eps, device='cpu', solution=None, a=0.0, dtype=np.float64,
-            angle=0.0, upwind=True, a_bdry=0.0, strong_bcs=False, **kwargs,
+            angle=0.0, upwind=True, **kwargs,
     ):
         self.time = 0
         self.poly_order = poly_order
@@ -24,8 +24,6 @@ class IceEquilibriumEuler2D:
         self.potential_temperature = self.tmp1 = self.tmp2 = self.qv = self.ql = self.qi = self.p = None
         self.moist_pt = None
         self.gibbs_error = None
-        self.a_bdry = a_bdry
-        self.strong_bcs = strong_bcs
 
         self.diagnostics = dict((name, []) for name in (
             'energy', 'entropy', 'mass', 'water', 'vapour',
@@ -260,10 +258,14 @@ class IceEquilibriumEuler2D:
 
         if (hqw_cell_means <= 0).any():
             print("Negative water cell mean detected")
+            print("x-coords:", self.xs[state['hqw'] <= 0], "\n")
+            print("y-coords:", self.ys[state['hqw'] <= 0], "\n")
             exit(0)
 
         if (state['hqw'] <= 0).any():
             print("Negative water mass - limiting failed :( ")
+            print("x-coords:", self.xs[state['hqw'] <= 0], "\n")
+            print("y-coords:", self.ys[state['hqw'] <= 0], "\n")
             exit(0)
 
         h_limited, h_cell_means = self.positivity_preserving_limiter(state['h'])
@@ -271,10 +273,14 @@ class IceEquilibriumEuler2D:
 
         if (h_cell_means <= 0).any():
             print("Negative density cell mean detected")
+            print("x-coords:", self.xs[state['h'] <= 0], "\n")
+            print("y-coords:", self.ys[state['h'] <= 0], "\n")
             exit(0)
 
         if (state['h'] <= 0).any():
-            print("Negative density - limiting failed :( ")
+            print("Negative density :( ")
+            print("x-coords:", self.xs[state['h'] <= 0], "\n")
+            print("y-coords:", self.ys[state['h'] <= 0], "\n")
             exit(0)
 
     def time_step(self, dt=None, order=3, forcing=None):
@@ -500,8 +506,8 @@ class IceEquilibriumEuler2D:
         uv_flux_vert = 0.5 * (uv_up_flux + uv_down_flux) - self.a * (c_ve / h_ve) * diff
 
         # wall boundaries
-        uv_flux_vert[-1, ...] = (uv_down_flux - self.a_bdry * (c_ve / h_ve) * diff)[-1, ...]
-        uv_flux_vert[0, ...] = (uv_up_flux - self.a_bdry * (c_ve / h_ve) * diff)[0, ...]
+        uv_flux_vert[-1, ...] = (uv_down_flux - self.a * (c_ve / h_ve) * diff)[-1, ...]
+        uv_flux_vert[0, ...] = (uv_up_flux - self.a * (c_ve / h_ve) * diff)[0, ...]
 
         # handle u
         #######
@@ -516,10 +522,13 @@ class IceEquilibriumEuler2D:
         self.tmp2[:, :, :, 0] = -(uv_flux_horz - uv_right_flux)[:, :-1] * (self.w_x * self.Jy[:, :, :, 0]) * self.xi_x_right[:, :-1]
 
         # vorticity
-        self.tmp1[:, :, -1] += 0.5 * (v_down * (u_up - u_down))[1:] * (self.w_x * self.Jx[:, :, -1])
-        self.tmp1[:, :, 0] += 0.5 * (v_up * (u_up - u_down))[:-1] * (self.w_x * self.Jx[:, :, 0])
+        self.tmp1[:-1, :, -1] += 0.5 * (v_down * (u_up - u_down))[1:-1] * (self.w_x * self.Jx[:-1, :, -1])
+        self.tmp1[1:, :, 0] += 0.5 * (v_up * (u_up - u_down))[1:-1] * (self.w_x * self.Jx[1:, :, 0])
         self.tmp2[:, :, :, -1] += -0.5 * (v_left * (v_right - v_left))[:, 1:] * (self.w_x * self.Jy[:, :, :, -1])
         self.tmp2[:, :, :, 0] += -0.5 * (v_right * (v_right - v_left))[:, :-1] * (self.w_x * self.Jy[:, :, :, 0])
+
+        self.tmp1[-1, :, -1] += -((v_down < 0) * v_down * u_down)[-1] * (self.w_x * self.Jx[-1, :, -1])[0]
+        self.tmp1[0, :, 0] += ((v_up > 0) * v_up * u_up)[0] * (self.w_x * self.Jx[0, :, 0])[0]
 
         out -= (self.tmp1 + self.tmp2)
         time_deriv['u'] = out / (self.J * self.w)
@@ -537,10 +546,13 @@ class IceEquilibriumEuler2D:
         self.tmp2[:, :, :, 0] = -(uv_flux_horz - uv_right_flux)[:, :-1] * (self.w_x * self.Jy[:, :, :, 0]) * self.xi_y_right[:, :-1]
 
         # vorticity boundary terms
-        self.tmp1[:, :, -1] += -0.5 * (u_down * (u_up - u_down))[1:] * (self.w_x * self.Jx[:, :, -1])
-        self.tmp1[:, :, 0] += -0.5 * (u_up * (u_up - u_down))[:-1] * (self.w_x * self.Jx[:, :, 0])
+        self.tmp1[:-1, :, -1] += -0.5 * (u_down * (u_up - u_down))[1:-1] * (self.w_x * self.Jx[:-1, :, -1])
+        self.tmp1[1:, :, 0] += -0.5 * (u_up * (u_up - u_down))[1:-1] * (self.w_x * self.Jx[1:, :, 0])
         self.tmp2[:, :, :, -1] += 0.5 * (u_left * (v_right - v_left))[:, 1:] * (self.w_x * self.Jy[:, :, :, -1])
         self.tmp2[:, :, :, 0] += 0.5 * (u_right * (v_right - v_left))[:, :-1] * (self.w_x * self.Jy[:, :, :, 0])
+
+        self.tmp1[-1, :, -1] += ((v_down < 0) * u_down * u_down)[-1] * (self.w_x * self.Jx[-1, :, -1])[0]
+        self.tmp1[0, :, 0] += -((v_up > 0) * u_up * u_up)[0] * (self.w_x * self.Jx[0, :, 0])[0]
 
         out -= (self.tmp1 + self.tmp2)
         time_deriv['v'] = (out / (self.J * self.w)) - self.g
@@ -601,10 +613,6 @@ class IceEquilibriumEuler2D:
         if verbose:
             for name in time_deriv.keys():
                 print(f'd{name}/dt abs max: {abs(time_deriv[name]).max()}.')
-
-        if self.strong_bcs:
-            time_deriv['v'][-1, :, -1] = 0.0
-            time_deriv['u'][0, :, 0] = 0.0
 
         return time_deriv
 
