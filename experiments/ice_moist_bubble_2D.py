@@ -52,13 +52,13 @@ def initial_condition(xs, ys, solver):
     p = 1_00_000.0 * ex ** (solver.cpd / solver.Rd)
     density = p / (solver.Rd * ex * dry_theta)
 
-    qw = solver.rh_to_qw(0.7, p, density)
+    qw = solver.rh_to_qw(0.95, p, density)
     qd = 1 - qw
 
     R = solver.Rd * qd + solver.Rv * qw
     T = p / (R * density)
 
-    assert (qw <= (solver.saturation_pressure(T) / (density * solver.Rv))).all()
+    assert (qw <= solver.saturation_fraction(T, density)).all()
 
     s = qd * solver.entropy_air(T, qd, density)
     s += qw * solver.entropy_vapour(T, qw, density)
@@ -68,21 +68,23 @@ def initial_condition(xs, ys, solver):
     rad_max = 2_000
     rad = np.sqrt((xs - 0.5 * xlim) ** 2 + (ys - 1.1 * rad_max) ** 2)
     mask = rad < rad_max
-    moist_pt += mask * 2 * (np.cos(np.pi * (rad / rad_max) / 2) ** 2)
+    moist_pt += mask * 2.0 * (np.cos(np.pi * (rad / rad_max) / 2) ** 2)
 
     s = solver.moist_pt2entropy(moist_pt, qw)
 
-    qv, ql, qi = solver.solve_fractions_from_entropy(density, qw, s)
-
+    qv, ql, qi = solver.solve_fractions_from_entropy(density, qw, s, verbose=True)
+    #  0.3410208713540216 0.10594892674155956 0.6589791286459784
     print('qw min-max:', qw.min(), qw.max())
     print('T min-max:', T.min() - 273, T.max() - 273)
     print('Density min-max:', density.min(), density.max())
     print('Pressure min-max:', p.min(), p.max())
     print('qv/qw min-max:', (qv/qw).min(), (qv/qw).max())
+    print('all vapour mean:', (qv == qw).mean())
     print('ql/qw min-max:', (ql/qw).min(), (ql/qw).max())
     print('qi/qw min-max:', (qi/qw).min(), (qi/qw).max(), '\n')
-
     hqw = density * qw
+
+
     return u, v, density, s * density, hqw, qv
 
 

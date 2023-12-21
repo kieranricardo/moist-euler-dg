@@ -67,8 +67,8 @@ class IceEquilibriumEuler2D:
         Ls0_ = 2.834e6
         Lf0_ = Ls0_ - Lv0_
 
-        self.Lv0 = 3.1285e6 #Lv0_ + (self.cpv - self.cl) * self.T0
-        self.Ls0 = self.Lv0 # Ls0_ + (self.cpv - self.ci) * self.T0
+        self.Lv0 = Lv0_ + (self.cpv - self.cl) * self.T0
+        self.Ls0 = Ls0_ + (self.cpv - self.ci) * self.T0
         self.Lf0 = self.Ls0 - self.Lv0 # = Lf0 + (self.ci - self.cl) * self.T0
 
         self.Lv0 = Lv0_ + (self.cpv - self.cl) * self.T0
@@ -741,7 +741,7 @@ class IceEquilibriumEuler2D:
         return self.cl * mathlib.log(T) + self.c1
 
     def entropy_ice(self, T, mathlib=np):
-        return self.cl * mathlib.log(T) + self.c2
+        return self.ci * mathlib.log(T) + self.c2
 
     def entropy_air(self, T, qd, density, mathlib=np):
         return self.cvd * mathlib.log(T) - self.Rd * mathlib.log(qd * density * self.Rd)
@@ -760,21 +760,22 @@ class IceEquilibriumEuler2D:
         R = self.Rd
         for _ in range(100):
             T = p / (density * R)
-            pv = self.saturation_pressure(T)
-            qv_sat = pv / (density * self.Rv * T)
+            qv_sat = self.saturation_fraction(T, density)
+            # qv_sat = pv / (density * self.Rv * T)
             qv = rh * qv_sat
             R = (1 - qv) * self.Rd + qv * self.Rv
 
         # qw = qv # unsaturated
         return qv
 
-    def saturation_pressure(self, T, mathlib=np):
-        logpsat = self.cvv * T * mathlib.log(T / self.T0) - self.Ls0 * (1 - T / self.T0)
-        logpsat += (T <= self.T0) * self.gibbs_ice(T)
-        logpsat += (T > self.T0) * self.gibbs_liquid(T)
+    def saturation_fraction(self, T, density, mathlib=np):
+        # -self.cvv * T * mathlib.log(T / self.T0) + self.Rv * T * mathlib.log(qv * density / self.rho0) + self.Ls0 * (1 - T / self.T0)
+        logqsat =  self.cvv * T * mathlib.log(T / self.T0) - self.Ls0 * (1 - T / self.T0)
+        logqsat += (T <= self.T0) * self.gibbs_ice(T)
+        logqsat += (T > self.T0) * self.gibbs_liquid(T)
 
-        logpsat /= (self.Rv * T)
-        return self.p0 * mathlib.exp(logpsat)
+        logqsat /= (self.Rv * T)
+        return (self.rho0 / density) * mathlib.exp(logqsat)
 
     def solve_qv_from_entropy(self, density, qw, entropy, mathlib=np, iters=10, qv=None, ql=None, verbose=False, tol=1e-10):
 
@@ -1049,142 +1050,193 @@ class IceEquilibriumEuler2D:
         qd = 1 - qw
 
         # check for triple point
-        T = self.T0
-        logT = np.log(T)
-        pv = self.p0
-        qv_ = pv / (T * self.Rv * density)
-        R = qv_ * self.Rv + qd * self.Rd
+        qv_ = self.p0 / (self.T0 * self.Rv * density)
 
-        rhs = entropy + R * logdensity + qd * self.Rd * mathlib.log(self.Rd * qd) + qv_ * self.Rv * np.log(qv_) - qv_ * self.c0
-        rhs -= qd * self.cvd * logT + qv_ * self.cvv * logT
+        ea = self.entropy_air(self.T0, qd, density)
+        ev = self.entropy_vapour(self.T0, qv_, density)
+        ec = entropy - qd * ea - qv_ * ev
 
-        A = self.cl * logT + self.c1
-        B = self.ci * logT + self.c2
+        el = self.entropy_liquid(self.T0)
+        ei = self.entropy_ice(self.T0)
 
-        ql_ = (rhs - B * (qw - qv_)) / (A - B)
-        qi_ = qw - (qv_ + ql_)
+        # solve:
+        # el * ql + ei * qi = ec
+        # ql + qi = qw - qv
 
-        if verbose:
-            print('Triple point check:')
-            print('qw:', qw)
-            print('qv:', qv_)
-            print('ql:', ql_)
-            print('qi:', qi_, '\n')
+        ql_ = (ec - ei * (qw - qv_)) / (el - ei)
+        qi_ = (qw - qv_) - ql_
+
+        # if verbose:
+        #     print('Triple point check:')
+        #     print('qw:', qw)
+        #     print('qv:', qv_)
+        #     print('ql:', ql_)
+        #     print('qi:', qi_, '\n')
 
         triple = 1.0 * (ql_ >= 0.0) * (qi_ >= 0.0)
 
-        if qv is None:
-            qv = 1e-3 + 0.0 * qw
-            iters = 40
+        # check if all vapour
+        R = qw * self.Rv + qd * self.Rd
+        cv = qd * self.cvd + qw * self.cvv
+        logqw = mathlib.log(qw)
+        cvlogT = entropy + R * logdensity + qd * self.Rd * mathlib.log(self.Rd * qd) + qw * self.Rv * logqw
+        cvlogT += -qw * self.c0
+        logT = (1 / cv) * cvlogT
+        T = mathlib.exp(logT)
+        gv = self.gibbs_vapour(T, qw, density, mathlib=mathlib)
+        all_vapour = (gv < self.gibbs_liquid(T, mathlib=mathlib)) * (gv < self.gibbs_ice(T, mathlib=mathlib)) * 1.0
 
-        if qi is None:
+        if (qv is None) or (qi is None):
+            qv = qw
             qi = 0.0 * qw
             iters = 40
 
         qv = (1 - triple) * qv + triple * qv_
         qi = (1 - triple) * qi + triple * qi_
 
+        qv = (1 - all_vapour) * qv + all_vapour * qw
+        qi = (1 - all_vapour) * qi
+
         ql = qw - (qv + qi)
 
-        for _ in range(iters):
+        is_solved = all_vapour + triple
+        assert is_solved.max() <= 1.0
 
-            # solve for temperature and pv
-            R = qv * self.Rv + qd * self.Rd
-            cv = qd * self.cvd + qv * self.cvv + ql * self.cl + qi * self.ci
+        has_liquid = (ql >= 0) * 1.0
 
-            logqv = mathlib.log(qv)
+        def _newton_loop(density, qw, entropy, logdensity, is_solved, has_liquid, qd, qv, ql, qi):
+            for _ in range(iters):
 
-            cvlogT = entropy + R * logdensity + qd * self.Rd * mathlib.log(self.Rd * qd) + qv * self.Rv * logqv
-            cvlogT += -qv * self.c0 - ql * self.c1 - qi * self.c2
-            logT = (1 / cv) * cvlogT
+                # solve for temperature and pv
+                R = qv * self.Rv + qd * self.Rd
+                cv = qd * self.cvd + qv * self.cvv + ql * self.cl + qi * self.ci
 
-            T = mathlib.exp(logT)
-            pv = qv * self.Rv * density * T
-            logpv = logqv + np.log(self.Rv) + logdensity + logT
+                logqv = mathlib.log(qv)
 
-            # calculate gradients of T and pv w.r.t. moisture concentrations
-            dlogTdqv = (1 / cv) * (self.Rv * logdensity + self.Rv * logqv + self.Rv - self.c0)
-            dlogTdqv += -(1 / cv) * logT * (self.cvv)
+                cvlogT = entropy + R * logdensity + qd * self.Rd * mathlib.log(self.Rd * qd) + qv * self.Rv * logqv
+                cvlogT += -qv * self.c0 - ql * self.c1 - qi * self.c2
+                logT = (1 / cv) * cvlogT
 
-            dlogTdql = (1 / cv) * (-self.c1)
-            dlogTdql += -(1 / cv) * logT * (self.cl)
+                T = mathlib.exp(logT)
 
-            dlogTdqi = (1 / cv) * (-self.c2)
-            dlogTdqi += -(1 / cv) * logT * (self.ci)
+                pv = qv * self.Rv * density * T
+                logpv = logqv + np.log(self.Rv) + logdensity + logT
 
-            dTdqv = dlogTdqv * T
-            dTdql = dlogTdql * T
-            dTdqi = dlogTdqi * T
+                # calculate gradients of T and pv w.r.t. moisture concentrations
+                dlogTdqv = (1 / cv) * (self.Rv * logdensity + self.Rv * logqv + self.Rv - self.c0)
+                dlogTdqv += -(1 / cv) * logT * (self.cvv)
 
-            dpvdqv = self.Rv * density * T + qv * self.Rv * density * dTdqv
-            dpvdql = qv * self.Rv * density * dTdql
-            dpvdqi = qv * self.Rv * density * dTdqi
+                dlogTdql = (1 / cv) * (-self.c1)
+                dlogTdql += -(1 / cv) * logT * (self.cl)
 
-            # calculate Gibbs potentials and gradients w.r.t T and pv
+                dlogTdqi = (1 / cv) * (-self.c2)
+                dlogTdqi += -(1 / cv) * logT * (self.ci)
 
-            gibbs_v = -self.cpv * T * (logT - np.log(self.T0)) + self.Rv * T * (logpv - np.log(self.p0)) + self.Ls0 * (1 - T / self.T0)
-            gibbs_l = -self.cl * T * (logT - np.log(self.T0)) + self.Lf0 * (1 - T / self.T0)
-            gibbs_i = -self.ci * T * (logT - np.log(self.T0))
+                dTdqv = dlogTdqv * T
+                dTdql = dlogTdql * T
+                dTdqi = dlogTdqi * T
 
-            dgibbs_vdT = -self.cpv * (logT - np.log(self.T0)) - self.cpv + self.Rv * (logpv - np.log(self.p0)) - self.Ls0 / self.T0
-            dgibbs_ldT = -self.cl * (logT - np.log(self.T0)) - self.cl - self.Lf0 / self.T0
-            dgibbs_idT = -self.ci * (logT - np.log(self.T0)) - self.ci
+                dpvdqv = self.Rv * density * T + qv * self.Rv * density * dTdqv
+                dpvdql = qv * self.Rv * density * dTdql
+                dpvdqi = qv * self.Rv * density * dTdqi
 
-            dgibbs_vdpv = self.Rv * T / pv
+                # calculate Gibbs potentials and gradients w.r.t T and pv
+                gibbs_v = -self.cpv * T * (logT - np.log(self.T0)) + self.Rv * T * (logpv - np.log(self.p0)) + self.Ls0 * (1 - T / self.T0)
+                gibbs_l = -self.cl * T * (logT - np.log(self.T0)) + self.Lf0 * (1 - T / self.T0)
+                gibbs_i = -self.ci * T * (logT - np.log(self.T0))
 
-            # calculate Gibbs potentials gradients w.r.t moist concentrations
-            dgibbs_vdqv = dgibbs_vdT * dTdqv + dgibbs_vdpv * dpvdqv
-            dgibbs_ldqv = dgibbs_ldT * dTdqv
-            dgibbs_idqv = dgibbs_idT * dTdqv
+                dgibbs_vdT = -self.cpv * (logT - np.log(self.T0)) - self.cpv + self.Rv * (logpv - np.log(self.p0)) - self.Ls0 / self.T0
+                dgibbs_ldT = -self.cl * (logT - np.log(self.T0)) - self.cl - self.Lf0 / self.T0
+                dgibbs_idT = -self.ci * (logT - np.log(self.T0)) - self.ci
 
-            dgibbs_vdql = dgibbs_vdT * dTdql + dgibbs_vdpv * dpvdql
-            dgibbs_ldql = dgibbs_ldT * dTdql
-            dgibbs_idql = dgibbs_idT * dTdql
+                dgibbs_vdpv = self.Rv * T / pv
 
-            dgibbs_vdqi = dgibbs_vdT * dTdqi + dgibbs_vdpv * dpvdqi
-            dgibbs_ldqi = dgibbs_ldT * dTdqi
-            dgibbs_idqi = dgibbs_idT * dTdqi
+                # calculate Gibbs potentials gradients w.r.t moist concentrations
+                dgibbs_vdqv = dgibbs_vdT * dTdqv + dgibbs_vdpv * dpvdqv
+                dgibbs_ldqv = dgibbs_ldT * dTdqv
+                dgibbs_idqv = dgibbs_idT * dTdqv
 
-            # update moisture species
+                dgibbs_vdql = dgibbs_vdT * dTdql + dgibbs_vdpv * dpvdql
+                dgibbs_ldql = dgibbs_ldT * dTdql
+                dgibbs_idql = dgibbs_idT * dTdql
 
-            # if thawed (and not triple point) set qi = 0, and solve for gibbs_vapour = gibbs_liquid
-            thawed = (T > self.T0) * (1 - triple)
-            val = (gibbs_v - gibbs_l)
-            dvaldqv = (dgibbs_vdqv - dgibbs_ldqv) - (dgibbs_vdql - dgibbs_ldql)
-            update = -thawed * val / dvaldqv
+                dgibbs_vdqi = dgibbs_vdT * dTdqi + dgibbs_vdpv * dpvdqi
+                dgibbs_ldqi = dgibbs_ldT * dTdqi
+                dgibbs_idqi = dgibbs_idT * dTdqi
 
-            # if frozen (and not triple point) set ql = 0, and solve for gibbs_vapour = gibbs_ice
-            frozen = (T < self.T0) * (1 - triple)
-            val = (gibbs_v - gibbs_i)
-            dvaldqv = (dgibbs_vdqv - dgibbs_idqv) - (dgibbs_vdqi - dgibbs_idqi)
-            update = update - frozen * val / dvaldqv
+                # update moisture species
 
-            qv = qv + update
+                # if thawed (and not triple point) set qi = 0, and solve for gibbs_vapour = gibbs_liquid
+                # thawed = (T > self.T0) * (1 - triple) #* (1 - all_vapourall_vapour)
+                thawed = has_liquid * (1 - is_solved)
+                val = (gibbs_v - gibbs_l)
+                dvaldqv = (dgibbs_vdqv - dgibbs_ldqv) - (dgibbs_vdql - dgibbs_ldql)
+                update = -thawed * val / dvaldqv
 
-            qv = mathlib.maximum(qv, 1e-12 + 0 * qw)
+                # if frozen (and not triple point) set ql = 0, and solve for gibbs_vapour = gibbs_ice
+                # frozen = (T < self.T0) * (1 - triple) #* (1 - all_vapour)
+                frozen = (1 - has_liquid) * (1 - is_solved)
+                val = (gibbs_v - gibbs_i)
+                dvaldqv = (dgibbs_vdqv - dgibbs_idqv) - (dgibbs_vdqi - dgibbs_idqi)
+                update = update - frozen * val / dvaldqv
 
-            # if triple don't update, if frozen (and not triple) set qi = qw - qv, if thawed set qi = 0
-            qi = triple * qi + frozen * (qw - qv)
+                qv = qv + update
+
+                qv = mathlib.maximum(qv, 1e-15 + 0 * qw)
+
+                # if triple don't update, if frozen (and not triple) set qi = qw - qv, if thawed set qi = 0
+                qi = is_solved * qi + frozen * (qw - qv)
+                ql = qw - (qv + qi)
+
+                rel_update = abs(update / qv).max()
+                if rel_update < tol:
+                    break
+
+            # could be issue with only vapour -- not converged?
+            qv = mathlib.minimum(qv, qw)
+            qi = is_solved * qi + frozen * (qw - qv)
             ql = qw - (qv + qi)
 
-            rel_update = abs(update / qv).max()
-            if rel_update < tol:
-                break
+            if rel_update >= tol:
+                print('Warning convergence not achieved')
+
+            return qv, qi, ql
+
+        qv, qi, ql = _newton_loop(density, qw, entropy, logdensity, is_solved, has_liquid, qd, qv, ql, qi)
+
+        R = qv * self.Rv + qd * self.Rd
+        cv = qd * self.cvd + qv * self.cvv + ql * self.cl + qi * self.ci
+        logqv = mathlib.log(qv)
+        cvlogT = entropy + R * logdensity + qd * self.Rd * mathlib.log(self.Rd * qd) + qv * self.Rv * logqv
+        cvlogT += -qv * self.c0 - ql * self.c1 - qi * self.c2
+        logT = (1 / cv) * cvlogT
+        T = mathlib.exp(logT)
+
+        is_solved = is_solved + (1 - is_solved) * (T > self.T0) * has_liquid
+        is_solved = is_solved + (1 - is_solved) * (T < self.T0) * (1 - has_liquid)
+        assert is_solved.max() <= 1.0
+
+        if is_solved.min() == 0.0:
+            if verbose:
+                print('Running loop 2')
+            has_liquid = 1 - has_liquid
+            qv, qi, ql = _newton_loop(density, qw, entropy, logdensity, is_solved, has_liquid, qd, qw, 0.0 * qw, 0.0 * qw)
+
 
         # TODO: faster way to solve for single phase
-        qv = mathlib.minimum(qv, qw)
-        qi = triple * qi + frozen * (qw - qv)
-        ql = qw - (qv + qi)
 
-        if verbose:
-            print('qv:', qv)
-            print('ql:', ql)
-            print('qi:', qi)
-            print(f'Gibbs error 1: {(gibbs_v - gibbs_l)}')
-            print(f'Gibbs error 2: {(gibbs_v - gibbs_i)}')
-            print(f'Gibbs v: {gibbs_v}')
-            print('T:', T)
-            print('rel update:', rel_update, '\n')
+
+        # if verbose:
+        #     print('T:', T)
+        #     print('Rel update:', rel_update)
+        #     print('qv:', qv)
+        #     print('ql:', ql)
+        #     print('qi:', qi)
+        #     print(f'Gibbs error 1: {(gibbs_v - gibbs_l)}')
+        #     print(f'Gibbs error 2: {(gibbs_v - gibbs_i)}')
+        #     print(f'Gibbs v: {gibbs_v}')
+        #     print('T:', T)
+        #     print('rel update:', rel_update, '\n')
 
         return qv, ql, qi
 

@@ -464,10 +464,17 @@ class EquilibriumEuler2D:
         self.tmp2[:, :, :, 0] = -(uv_flux_horz - uv_right_flux)[:, :-1] * (self.w_x * self.Jy[:, :, :, 0]) * self.xi_x_right[:, :-1]
 
         # vorticity
-        self.tmp1[:, :, -1] += 0.5 * (v_down * (u_up - u_down))[1:] * (self.w_x * self.Jx[:, :, -1])
-        self.tmp1[:, :, 0] += 0.5 * (v_up * (u_up - u_down))[:-1] * (self.w_x * self.Jx[:, :, 0])
+        self.tmp1[:-1, :, -1] += 0.5 * (v_down * (u_up - u_down))[1:-1] * (self.w_x * self.Jx[:-1, :, -1])
+        self.tmp1[1:, :, 0] += 0.5 * (v_up * (u_up - u_down))[1:-1] * (self.w_x * self.Jx[1:, :, 0])
         self.tmp2[:, :, :, -1] += -0.5 * (v_left * (v_right - v_left))[:, 1:] * (self.w_x * self.Jy[:, :, :, -1])
         self.tmp2[:, :, :, 0] += -0.5 * (v_right * (v_right - v_left))[:, :-1] * (self.w_x * self.Jy[:, :, :, 0])
+
+        self.tmp1[-1, :, -1] += 0.5 * (v_down * (u_up - u_down))[-1] * (self.w_x * self.Jx[-1, :, -1])[0]
+        self.tmp1[0, :, 0] += 0.5 * (v_up * (u_up - u_down))[0] * (self.w_x * self.Jx[0, :, 0])[0]
+
+        # fake tangent BCs - 0.5 = linear neutral, 1 = linear dissipative
+        # self.tmp1[-1, :, -1] += -0.5 * ((v_down < 0) * v_down * u_down)[-1] * (self.w_x * self.Jx[-1, :, -1])[0]
+        # self.tmp1[0, :, 0] += 0.5 * ((v_up > 0) * v_up * u_up)[0] * (self.w_x * self.Jx[0, :, 0])[0]
 
         out -= (self.tmp1 + self.tmp2)
         time_deriv['u'] = out / (self.J * self.w)
@@ -485,10 +492,16 @@ class EquilibriumEuler2D:
         self.tmp2[:, :, :, 0] = -(uv_flux_horz - uv_right_flux)[:, :-1] * (self.w_x * self.Jy[:, :, :, 0]) * self.xi_y_right[:, :-1]
 
         # vorticity boundary terms
-        self.tmp1[:, :, -1] += -0.5 * (u_down * (u_up - u_down))[1:] * (self.w_x * self.Jx[:, :, -1])
-        self.tmp1[:, :, 0] += -0.5 * (u_up * (u_up - u_down))[:-1] * (self.w_x * self.Jx[:, :, 0])
+        self.tmp1[:-1, :, -1] += -0.5 * (u_down * (u_up - u_down))[1:-1] * (self.w_x * self.Jx[:-1, :, -1])
+        self.tmp1[1:, :, 0] += -0.5 * (u_up * (u_up - u_down))[1:-1] * (self.w_x * self.Jx[1:, :, 0])
         self.tmp2[:, :, :, -1] += 0.5 * (u_left * (v_right - v_left))[:, 1:] * (self.w_x * self.Jy[:, :, :, -1])
         self.tmp2[:, :, :, 0] += 0.5 * (u_right * (v_right - v_left))[:, :-1] * (self.w_x * self.Jy[:, :, :, 0])
+
+        self.tmp1[-1, :, -1] += -0.5 * (u_down * (u_up - u_down))[-1] * (self.w_x * self.Jx[-1, :, -1])[0]
+        self.tmp1[0, :, 0] += -0.5 * (u_up * (u_up - u_down))[0] * (self.w_x * self.Jx[0, :, 0])[0]
+
+        # self.tmp1[-1, :, -1] += ((v_down < 0) * u_down * u_down)[-1] * (self.w_x * self.Jx[-1, :, -1])[0]
+        # self.tmp1[0, :, 0] += -((v_up > 0) * u_up * u_up)[0] * (self.w_x * self.Jx[0, :, 0])[0]
 
         out -= (self.tmp1 + self.tmp2)
         time_deriv['v'] = (out / (self.J * self.w)) - self.g
@@ -552,6 +565,8 @@ class EquilibriumEuler2D:
 
         if self.strong_bcs:
             time_deriv['v'][-1, :, -1] = 0.0
+            time_deriv['v'][0, :, 0] = 0.0
+            time_deriv['u'][-1, :, -1] = 0.0
             time_deriv['u'][0, :, 0] = 0.0
 
         return time_deriv

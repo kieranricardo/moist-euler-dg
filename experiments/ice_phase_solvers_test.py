@@ -5,7 +5,7 @@ from moist_euler_dg.equilibrium_euler_2D import EquilibriumEuler2D
 from matplotlib import pyplot as plt
 
 
-def error(solver, density, entropy, qw, qv, ql):
+def get_T(solver, density, entropy, qw, qv, ql):
     logdensity = np.log(density)
     qd = 1 - qw
     qi = qw - (qv + ql)
@@ -17,6 +17,13 @@ def error(solver, density, entropy, qw, qv, ql):
     cvlogT += -qv * solver.c0 - ql * solver.c1 - qi * solver.c2
     logT = (1 / cv) * cvlogT
     T = np.exp(logT)
+    return T
+
+
+def error(solver, density, entropy, qw, qv, ql):
+    logdensity = np.log(density)
+    logqv = np.log(qv)
+    T = get_T(solver, density, entropy, qw, qv, ql)
 
     gibbs_v = -solver.cvv * T * (logT - np.log(solver.T0)) + solver.Rv * T * (logdensity * logqv - np.log(solver.rho0)) + solver.Ls0 * (1 - T / solver.T0)
     gibbs_l = -solver.cl * T * (logT - np.log(solver.T0)) + solver.Lf0 * (1 - T / solver.T0)
@@ -30,46 +37,111 @@ solver = IceEquilibriumEuler2D((-0.5 , 0.5 ), (0, 1), 3, 2, 2, g=10, eps=0.2)
 solver_e = EquilibriumEuler2D((-0.5 , 0.5 ), (0, 1), 3, 2, 2, g=10, eps=0.2)
 
 # get a reasonable entropy a ground level
-density = 1.2
+# density = 1.2
 # qw = 0.02
-p = 1_00_000 * 0.95
+# p = 1_00_000
 
-qw = solver.rh_to_qw(0.9, p, density)
+# tricky point
+T = 202.28980656504663
+p = 25193.616121234074
+entropy = 2500.0
+density = 1.2
+qw = 0.02
 qd = 1 - qw
-qv, ql, qi = solver.solve_fractions_from_p(density, 1.2 * qw, p)
-R = qv * solver_e.Rv + qd * solver_e.Rd
-T = p / (density * R)
-print('qv:', qv)
-print('ql:', ql)
-print('qi:', qi)
-print('T:', T)
+
+qv, ql, qi = solver.solve_fractions_from_entropy(density, qw, entropy)
+T = get_T(solver, density, entropy, qw, qv, ql)
+print(f'qv={qv}, ql={ql}, qv={qi}')
+print(f'T={T}')
+
+T = get_T(solver, density, entropy, qw, qw, 0.0)
+print(f'All vapour T={T}')
+
+T = get_T(solver, density, entropy, qw, 1e-12, qw-1e-12)
+print(f'All liquid T={T}')
+
+T = get_T(solver, density, entropy, qw, 1e-12, 0.0)
+print(f'All ice T={T}')
+
 exit(0)
-qv = solver_e.solve_qv_from_p(density, qw, p)
+# entropy = qd * solver.entropy_air(T, qd, density) + qv * solver.entropy_vapour(T, qv, density) + ql * solver.entropy_liquid(T)
 
-qd = 1 - qw
-ql = qw - qv
-R = qv * solver_e.Rv + qd * solver_e.Rd
 
-T = p / (density * R)
-entropy = qd * solver_e.entropy_air(T, qd, density)
-entropy += qv * solver_e.entropy_vapour(T, qv, density)
-entropy += ql * solver_e.entropy_liquid(T)
-print('qv:', qv)
-print('ql:', ql)
+
+dT = 10
+T = solver.T0 + dT
+print(f'T={T - solver.T0} C, gl={solver.gibbs_liquid(T)}, gi={solver.gibbs_ice(T)}')
+
+T = solver.T0 - dT
+print(f'T={T - solver.T0}, gl={solver.gibbs_liquid(T)}, gi={solver.gibbs_ice(T)}')
+
+# gv - gl = 0: --> Rv * T * log(qv * rho) = gl -
+T = solver.T0 + 0.1
+tmp = solver.gibbs_ice(T) - (-solver.cvv * T * np.log(T / solver.T0) + solver.Rv * T * np.log(1 / solver.rho0) + solver.Ls0 * (1 - T / solver.T0))
+tmp /= solver.Rv * T
+print(f'T={T-solver.T0} C ice-vapour mix vapour saturation density:', np.exp(tmp))
+
+T = solver.T0 + 1
+tmp = solver.gibbs_ice(T) - (-solver.cvv * T * np.log(T / solver.T0) + solver.Rv * T * np.log(1 / solver.rho0) + solver.Ls0 * (1 - T / solver.T0))
+tmp /= solver.Rv * T
+print(f'T={T-solver.T0} C ice-vapour mix vapour saturation density:', np.exp(tmp))
+
+T = solver.T0 + 10
+tmp = solver.gibbs_ice(T) - (-solver.cvv * T * np.log(T / solver.T0) + solver.Rv * T * np.log(1 / solver.rho0) + solver.Ls0 * (1 - T / solver.T0))
+tmp /= solver.Rv * T
+print(f'T={T-solver.T0} C ice-vapour mix vapour saturation density:', np.exp(tmp))
+
+T = solver.T0 + 100
+tmp = solver.gibbs_ice(T) - (-solver.cvv * T * np.log(T / solver.T0) + solver.Rv * T * np.log(1 / solver.rho0) + solver.Ls0 * (1 - T / solver.T0))
+tmp /= solver.Rv * T
+print(f'T={T-solver.T0} C ice-vapour mix vapour saturation density:', np.exp(tmp), '\n\n')
+
+
+
+#####
+T = solver.T0 - 0.1
+tmp = solver.gibbs_liquid(T) - (-solver.cvv * T * np.log(T / solver.T0) + solver.Rv * T * np.log(1 / solver.rho0) + solver.Ls0 * (1 - T / solver.T0))
+tmp /= solver.Rv * T
+print(f'T={T-solver.T0} C ice-vapour mix vapour saturation density:', np.exp(tmp))
+
+T = solver.T0 - 1
+tmp = solver.gibbs_liquid(T) - (-solver.cvv * T * np.log(T / solver.T0) + solver.Rv * T * np.log(1 / solver.rho0) + solver.Ls0 * (1 - T / solver.T0))
+tmp /= solver.Rv * T
+print(f'T={T-solver.T0} C ice-vapour mix vapour saturation density:', np.exp(tmp))
+
+T = solver.T0 - 10
+tmp = solver.gibbs_liquid(T) - (-solver.cvv * T * np.log(T / solver.T0) + solver.Rv * T * np.log(1 / solver.rho0) + solver.Ls0 * (1 - T / solver.T0))
+tmp /= solver.Rv * T
+print(f'T={T-solver.T0} C ice-vapour mix vapour saturation density:', np.exp(tmp))
+
+T = solver.T0 - 100
+tmp = solver.gibbs_liquid(T) - (-solver.cvv * T * np.log(T / solver.T0) + solver.Rv * T * np.log(1 / solver.rho0) + solver.Ls0 * (1 - T / solver.T0))
+tmp /= solver.Rv * T
+print(f'T={T-solver.T0} C ice-vapour mix vapour saturation density:', np.exp(tmp))
+
+exit(0)
+# qw = solver.rh_to_qw(0.9, p, density)
+# qd = 1 - qw
+# qv, ql, qi = solver.solve_fractions_from_p(density, 1.2 * qw, p)
+# R = qv * solver_e.Rv + qd * solver_e.Rd
+# T = p / (density * R)
+# print('qv:', qv)
+# print('ql:', ql)
 # print('qi:', qi)
-print('T:', T)
-print('Entropy:', entropy)
-exit(0)
-
-# solver.c0 = solver_e.c0
-entropy = qd * solver.entropy_air(T, qd, density) + qv * solver.entropy_vapour(T, qv, density) + ql * solver.entropy_liquid(T)
-print('Entropy:', entropy)
-
-val, T = error(solver, density, entropy, qw, qv, ql)
-print('T:', T, '\n')
-
-qv, ql = solver.solve_qv_from_entropy(density, qw, entropy, verbose=True, iters=10, tol=0.0)
-print('qv:', qv, '\n')
+# print('T:', T)
+# exit(0)
+# qv = solver_e.solve_qv_from_p(density, qw, p)
+#
+# qd = 1 - qw
+# ql = qw - qv
+# R = qv * solver_e.Rv + qd * solver_e.Rd
+# T = p / (density * R)
+#
+# entropy = qd * solver.entropy_air(T, qd, density) + qv * solver.entropy_vapour(T, qv, density) + ql * solver.entropy_liquid(T)
+# print('Entropy:', entropy)
+#
+# val, T = error(solver, density, entropy, qw, qv, ql)
+# print('T:', T, '\n')
 
 qv, ql, qi = solver.solve_fractions_from_entropy(density, qw, entropy, verbose=True, iters=30, tol=0.0)
 
@@ -80,13 +152,18 @@ cvlogT += -qv * solver.c0 - ql * solver.c1 - qi * solver.c2
 logT = (1 / cv) * cvlogT
 T = np.exp(logT)
 logpv = np.log(qv) + np.log(solver.Rv) + np.log(density) + logT
+p = R * density * T
 
 print('\nqv:', qv)
 print('ql:', ql)
 print('qi:', qi)
+print('p:', p)
 print('T:', T, '\n')
 
-p = R * density * T
+print(solver.gibbs_vapour(T, qv, density))
+print(solver.gibbs_ice(T))
+exit(0)
+
 qv, ql, qi = solver.solve_fractions_from_p(density, qw, p)
 
 print('Pressure solve qv:', qv)
