@@ -1,53 +1,54 @@
 from matplotlib import pyplot as plt
-from moist_euler_dg.single_species_euler_2D import SingleSpeciesEuler2D
-from moist_euler_dg.equilibrium_euler_2D import EquilibriumEuler2D
+import matplotlib.ticker as ticker
+from moist_euler_dg.three_phase_euler_2D import TwoPhaseEuler2D
 import numpy as np
 import time
 import os
 import argparse
+from mpi4py import MPI
 
-exp_name = 'ullrich-2D-moist-bubble'
+
+comm = MPI.COMM_WORLD
+rank = comm.Get_rank()
+size = comm.Get_size()
 
 parser = argparse.ArgumentParser()
-# Optional argument
 parser.add_argument('--n', type=int, help='Number of cells')
 args = parser.parse_args()
 
-if not os.path.exists('./data'): os.makedirs('./data')
+run_model = False # whether to run model - set false to just plot previous run
+xlim = 20_000
+zlim = 10_000
 
-plt.rcParams['font.size'] = '12'
-
-run_model = True # whether to run model - set false to just plot previous run
-start_idx = -1 # set to 0, 1, 2, 3 to start model from part way through previous run
-dev = 'cpu'
-xlim = 10_000
-ylim = 30_000
-
-nx = args.n
-ny = 3 * nx
+nz = args.n
+nx = 2 * nz
 eps = 0.8
 g = 9.81
 poly_order = 3
 
-print(f"\n\n\n ---------- Moist bubble with nx={nx}, ny={ny}, cfl={eps}")
+experiment_name = f'ullrich-two-phase-bubble-nx-{nx}-nz-{nz}-p{poly_order}'
+data_dir = os.path.join('data', experiment_name)
+plot_dir = os.path.join('plots', experiment_name)
 
+if rank == 0:
+    print(f"---------- Ullrich bubble with nx={nx}, nz={nz}, cfl={eps}")
+    if not os.path.exists(plot_dir): os.makedirs(plot_dir)
+    if not os.path.exists(data_dir): os.makedirs(data_dir)
+
+comm.barrier()
 #
-plot_dir = f'./plots/{exp_name}-n{nx}-p{poly_order}'
-if not os.path.exists(plot_dir): os.makedirs(plot_dir)
 
-angle = 0 * (np.pi / 180)
-solver = EquilibriumEuler2D(
-    (0.0, xlim), (0, ylim), poly_order, nx, ny, g=g,
-    eps=eps, device=dev, solution=None, a=0.0,
-    dtype=np.float64, angle=angle, a_bdry=0.5
-)
+zmap = lambda x, z: z * zlim
+xmap = lambda x, z: xlim * (x - 0.5)
 
+solver = TwoPhaseEuler2D(xmap, zmap, poly_order, nx, g=g, cfl=0.5, a=0.5, nz=nz, upwind=True, nprocx=size)
 
 def initial_condition(xs, ys, solver, pert):
 
     u = 0 * ys
     v = 0 * ys
 
+    # set hydrostatic pressure/density profile
     TE = 310.0
     TP = 240.0
     GRAVITY = solver.g
@@ -81,122 +82,90 @@ def initial_condition(xs, ys, solver, pert):
     p = P0*np.exp(-GRAVITY*int_torr_1/RD + GRAVITY*int_torr_2*fac3/RD)
     density = p / (solver.Rd * T)
 
+    # add buoyancy perturbation
+    rad_max = 2_000
+    rad = np.sqrt(xs ** 2 + (ys - 1.0 * rad_max) ** 2)
+    mask = rad < rad_max
+    density -= mask * (pert * density / 300) * (np.cos(np.pi * (rad / rad_max) / 2) ** 2)
+
+    # set moisture
     qw = 0.02 + 0.0 * ys
-
-    print('Density min-max:', density.min(), density.max())
-    print('Pressure min-max:', p.min(), p.max())
-
     qv = solver.solve_qv_from_p(density, qw, p)
-    print('qv min-max:', qv.min(), qv.max(), '\n')
-
     qd = 1 - qw
     ql = qw - qv
     R = qv * solver.Rv + qd * solver.Rd
 
+    # calculate entropy
     T = p / (density * R)
     s = qd * solver.entropy_air(T, qd, density)
     s += qv * solver.entropy_vapour(T, qv, density)
     s += ql * solver.entropy_liquid(T)
 
-    moist_pt = solver.get_moist_pt(s, qw)
-
-    rad_max = 2_000
-    rad = np.sqrt((xs - 0.5 * xlim) ** 2 + (ys - 1.1 * rad_max) ** 2)
-    mask = rad < rad_max
-    moist_pt += mask * pert * (np.cos(np.pi * (rad / rad_max) / 2) ** 2)
-
-    s = solver.moist_pt2entropy(moist_pt, qw)
-
-    hqw = density * qw
-    return u, v, density, s * density, hqw, qv
+    return u, v, density, s, qw, qv
 
 
-run_time = 500
+u, v, density, s, qw, qv = initial_condition(solver.xs, solver.zs, solver, pert=2.0)
+solver.set_initial_condition(u, v, density, s, qw)
 
-u, v, density, hs, hqw, qv = initial_condition(solver.xs, solver.ys, solver, pert=0.0)
-solver.set_initial_condition(u, v, density, hs, hqw)
-base_moist_pt = solver.get_moist_pt()
-base_entropy = solver.state['hs'] / solver.state['h']
-
-# fig, ax = plt.subplots(1, 1, sharex=True, sharey=True)
-# im = solver.plot_solution(ax, dim=2, plot_func=lambda s: s.project_H1(s.get_moist_pt()))
-# cbar = plt.colorbar(im, ax=ax)
-# cbar.ax.tick_params(labelsize=8)
-# plt.show()
-# exit(0)
-
-if start_idx >= 0:
-    solver.load_restarts(f"./data/{exp_name}-n{nx}-p{poly_order}-part-{start_idx}")
-    solver.time = (start_idx + 1) * run_time / 4
-else:
-    u, v, density, hs, hqw, qv = initial_condition(solver.xs, solver.ys, solver, pert=10.0)
-    solver.set_initial_condition(u, v, density, hs, hqw)
-
-E0 = solver.integrate(solver.energy()).numpy()
-print('Energy:', E0)
-
-
-plot_func = lambda s: s.project_H1(s.get_moist_pt() - base_moist_pt)
-plot_func_2 = lambda s: s.project_H1((s.state['hs'] / s.state['h']) - base_entropy)
-
-vmin = vmax = None
-
-fig, axs = plt.subplots(2, 2, sharex=True, sharey=True)
-fig2, axs2 = plt.subplots(2, 2, sharex=True, sharey=True)
-
-fig.suptitle('Moist equivalent potential temperature')
-fig2.suptitle('Specific entropy')
+tends = np.array([0.0, 400, 800, 1000])
 
 if run_model:
-    for i in range(start_idx+1, 4):
-
-        tend = solver.time + (run_time / 4)
+    for i, tend in enumerate(tends):
         t0 = time.time()
-        while solver.time <= tend:
-            solver.time_step()
+        while solver.time < tend:
+            dt = min(solver.get_dt(), tend - solver.time)
+            solver.time_step(dt=dt)
         t1 = time.time()
-        print('Walltime:', t1 - t0, "s. Simulation time: ", solver.time, "s.")
-        solver.save_restarts(f"./data/{exp_name}-n{nx}-p{poly_order}-part-{i}")
+
+        if rank == 0:
+            print("Simulation time (unit less):", solver.time)
+            print("Wall time:", time.time() - t0, '\n')
+
+        solver.save(solver.get_filepath(data_dir, experiment_name))
+
+# plotting
+if rank == 0:
+    plt.rcParams['font.size'] = '12'
+
+    solver_plot = TwoPhaseEuler2D(xmap, zmap, poly_order, nx, g=g, cfl=0.5, a=0.5, nz=nz, upwind=True, nprocx=1)
+    _, _, _, s0, qw0, qv0 = initial_condition(solver_plot.xs, solver_plot.zs, solver_plot, pert=0.0)
+    ql0 = qw0 - qv0
+
+    def fmt(x, pos):
+        a, b = '{:.2e}'.format(x).split('e')
+        b = int(b)
+        return r'${} \times 10^{{{}}}$'.format(a, b)
+
+    plot_func_entropy = lambda s: s.project_H1(s.s - s0)
+    plot_func_density = lambda s: s.project_H1(s.h)
+    plot_func_water = lambda s: s.project_H1(s.q - qw0)
+    plot_func_vapour = lambda s: s.project_H1(s.solve_qv_from_entropy(s.h, s.q, s.s) - qv0)
+    plot_func_liquid = lambda s: s.project_H1(s.q - s.solve_qv_from_entropy(s.h, s.q, s.s) - ql0)
+
+    fig_list = [plt.subplots(2, 2, sharex=True, sharey=True) for _ in range(5)]
+
+    pfunc_list = [
+        plot_func_entropy, plot_func_density,
+        plot_func_water, plot_func_vapour, plot_func_liquid
+    ]
+
+    labels = ["entropy", "density", "water", "vapour", "liquid"]
+
+    energy = []
+    for i, tend in enumerate(tends):
+        filepaths = [solver_plot.get_filepath(data_dir, experiment_name, proc=i, nprocx=size, time=tend) for i in range(size)]
+        solver_plot.load(filepaths)
+        energy.append(solver_plot.integrate(solver_plot.energy()))
+
+        for (fig, axs), plot_fun in zip(fig_list, pfunc_list):
+            ax = axs[i // 2][i % 2]
+            ax.tick_params(labelsize=8)
+            im = solver_plot.plot_solution(ax, dim=2, plot_func=plot_fun)
+            cbar = plt.colorbar(im, ax=ax, format=ticker.FuncFormatter(fmt))
+            cbar.ax.tick_params(labelsize=8)
 
 
-for i in range(4):
-    solver.load_restarts(f"./data/{exp_name}-n{nx}-p{poly_order}-part-{i}")
-
-    ax = axs[i // 2][i % 2]
-    # ax.set_xlim(0.25 * xlim, 0.75 * xlim)
-    im = solver.plot_solution(ax, dim=2, vmin=vmin, vmax=vmax, plot_func=plot_func)
-    cbar = plt.colorbar(im, ax=ax)
-    cbar.ax.tick_params(labelsize=8)
-
-    ax = axs2[i // 2][i % 2]
-    # ax.set_xlim(0.25 * xlim, 0.75 * xlim)
-    im = solver.plot_solution(ax, dim=2, plot_func=plot_func_2)
-    cbar = plt.colorbar(im, ax=ax)
-    cbar.ax.tick_params(labelsize=8)
-
-E = solver.integrate(solver.energy()).numpy()
-print('Energy:', E)
-print("Relative energy change:", (E - E0) / E0)
-print('Estimated relative energy change:', np.array(solver.diagnostics['dEdt']).mean() * solver.time / E0)
-
-fig.savefig(f'{plot_dir}/{exp_name}-snaps-n{nx}-p{poly_order}.png')
-fig2.savefig(f'{plot_dir}/{exp_name}-snaps-entropy-n{nx}-p{poly_order}.png')
-
-plt.figure(3)
-names = ['entropy_variance', 'water_variance', 'energy']
-
-for name in names:
-    arr = np.array(solver.diagnostics[name])
-    arr = (arr - arr[0]) / arr[0]
-    plt.plot(solver.diagnostics['time'], arr, label=name.replace('_', ' '))
-    plt.yscale('symlog', linthresh=1e-15)
-
-plt.legend()
-plt.ylabel("Relative error")
-plt.xlabel("Time (s)")
-plt.savefig(f'{plot_dir}/{exp_name}-conservation-n{nx}-p{poly_order}.png')
-
-plt.figure(4)
-plt.title("Total water vapour")
-plt.plot(solver.diagnostics['time'], solver.diagnostics['vapour'])
-plt.savefig(f'{plot_dir}/{exp_name}-vapour-n{nx}-p{poly_order}.png')
+    for (fig, ax), label in zip(fig_list, labels):
+        plot_name = f'{label}_{experiment_name}'
+        fp = solver_plot.get_filepath(plot_dir, plot_name, ext='png')
+        fig.savefig(fp, bbox_inches="tight")

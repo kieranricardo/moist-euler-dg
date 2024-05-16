@@ -293,7 +293,7 @@ class EquilibriumEuler2D:
     def integrate(self, q):
         return (q * self.w * self.J).sum()
 
-    def plot_solution(self, ax, vmin=None, vmax=None, plot_func=None, dim=3, cmap='nipy_spectral'):
+    def plot_solution(self, ax, vmin=None, vmax=None, plot_func=None, dim=3, cmap='nipy_spectral', levels=1000):
         x_plot = self.xs.swapaxes(1, 2).reshape(self.state['h'].shape[0] * self.state['h'].shape[2], -1)
         y_plot = self.ys.swapaxes(1, 2).reshape(self.state['h'].shape[0] * self.state['h'].shape[2], -1)
 
@@ -306,7 +306,7 @@ class EquilibriumEuler2D:
         if dim == 3:
             return ax.plot_surface(x_plot, y_plot, z_plot, cmap=cmap, vmin=vmin, vmax=vmax)
         elif dim == 2:
-            return ax.contourf(x_plot, y_plot, z_plot, cmap=cmap, vmin=vmin, vmax=vmax, levels=1000)
+            return ax.contourf(x_plot, y_plot, z_plot, cmap=cmap, vmin=vmin, vmax=vmax, levels=levels)
             #return ax.imshow(z_plot, cmap=cmap, vmin=vmin, vmax=vmax)
 
     def hflux(self, u, v, h, hs):
@@ -883,5 +883,9 @@ class EquilibriumEuler2D:
         self.set_initial_condition(*data)
 
         for name in self.diagnostics.keys():
-            arr = np.load(f"{fp_prefix}_{name}.npy")
-            self.diagnostics[name] = list(arr)
+            try:
+                arr = np.load(f"{fp_prefix}_{name}.npy")
+                self.diagnostics[name] = list(arr)
+            except Exception as e:
+                pass
+                # print("File not found:", f"{fp_prefix}_{name}.npy")

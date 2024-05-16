@@ -1,33 +1,42 @@
 from matplotlib import pyplot as plt
 import matplotlib.animation as animation
-from moist_euler_dg.dry_euler_2D import DryEuler2D
-from matplotlib.animation import FFMpegWriter as MovieWriter
+from moist_euler_dg.euler_2D import Euler2D
 import numpy as np
-import torch
 import time
 import os
-
-if not os.path.exists('./plots'): os.makedirs('./plots')
-if not os.path.exists('./data'): os.makedirs('./data')
-
-plt.rcParams['font.size'] = '12'
+from mpi4py import MPI
 
 
-dev = 'cpu'
-xlim = 2_000
-ylim = 2_000
+comm = MPI.COMM_WORLD
+rank = comm.Get_rank()
+size = comm.Get_size()
 
-nx = ny = 10
-eps = 0.8
+run_model = True # if false just plot most recent run
+xlim = 20_000
+zlim = 10_000
+
+nz = 10
+nx = 2 * nz
+eps = 1.4
 g = 9.81
 poly_order = 3
+
+# make data and plotting directories
+experiment_name = f'dry-bubble-nx-{nx}-nz-{nz}-p{poly_order}'
+data_dir = os.path.join('data', experiment_name)
+plot_dir = os.path.join('plots', experiment_name)
+
+if rank == 0:
+    if not os.path.exists(plot_dir): os.makedirs(plot_dir)
+    if not os.path.exists(data_dir): os.makedirs(data_dir)
+
+comm.barrier()
+
 #
-angle = 0 * (np.pi / 180)
-solver = DryEuler2D(
-    (-0.5 * xlim, 0.5 * xlim), (0, ylim), poly_order, nx, ny, g=g,
-    eps=eps, device=dev, solution=None, a=0.0,
-    dtype=np.float64, angle=angle
-)
+zmap = lambda x, z: z * zlim
+xmap = lambda x, z: xlim * (x - 0.5)
+
+solver = Euler2D(xmap, zmap, poly_order, nx, g=g, cfl=0.5, a=0.5, nz=nz, upwind=True, nprocx=size)
 
 def initial_condition(xs, ys, R, cp, cv, p0, g, gamma):
 
@@ -37,27 +46,34 @@ def initial_condition(xs, ys, R, cp, cv, p0, g, gamma):
 
     dexdy = -g / 300
 
-    density_0 = 1.2
+    # p_ground = (b * R * density_ground) ** gamma * (1 / p0) ** (R / cv)
+    p_ground = 100_000.0
+    density_ground = (p_ground / ((1 / p0) ** (R / cv))) ** (1 / gamma) / (300 * R)
 
     const = cp * (R * 300 / p0) ** (R / cv)
-    ex0 = const * density_0 ** (R / cv) # surface density is 1.2 kg/m^3
+    ex0 = const * density_ground ** (R / cv) # surface density is 1.2 kg/m^3
     ex = ex0 + ys * dexdy
 
     density = (ex / const) ** (cv / R)
+    p = (b * R * density) ** gamma * (1 / p0) ** (R / cv)
 
-    rad = np.sqrt(xs ** 2 + (ys - 260) ** 2)
-    mask = rad < 250
-    b += mask * 0.5 * (1 + np.cos(np.pi * rad / 250.0))
+    R_max = 2_000.0
+    rad = np.sqrt(xs ** 2 + (ys - R_max) ** 2)
+    mask = rad < R_max
+    pert = -(2.0 / 300.0) * density
+    density += pert * mask * 0.5 * (1 + np.cos(np.pi * rad / R_max))
+    # b += mask * 2 * np.cos(0.5 * np.pi * rad / R_max)**2
 
-    p = (b * R * density)**gamma * (1 / p0)**(R / cv)
+    # p = (b * R * density)**gamma * (1 / p0)**(R / cv)
     s = cv * np.log(p / density**gamma)
 
-    print('Pressure min:', p.min())
+    # print('Pressure min:', p.min(), p.max())
+    # print('b min-max:', b.min(), b.max())
     return u, v, density, s * density
 
-u, v, density, sb = initial_condition(
+u, v, density, hs = initial_condition(
     solver.xs,
-    solver.ys,
+    solver.zs,
     solver.R,
     solver.cp,
     solver.cv,
@@ -65,45 +81,46 @@ u, v, density, sb = initial_condition(
     solver.g,
     solver.gamma
 )
+solver.set_initial_condition(u, v, density, hs / density)
 
-solver.set_initial_condition(u, v, density, sb)
+tends = np.array([0.0, 400, 800, 1000])
 
-E0 = solver.integrate(solver.energy()).numpy()
-print('Energy:', E0)
+if run_model:
+    for i, tend in enumerate(tends):
+        t0 = time.time()
+        while solver.time < tend:
+            dt = min(solver.get_dt(), tend - solver.time)
+            solver.time_step(dt=dt)
+        t1 = time.time()
 
-plot_func = lambda s: (s.hb / s.h)
+        if rank == 0:
+            print("Simulation time (unit less):", solver.time)
+            print("Wall time:", time.time() - t0, '\n')
 
-vmin = 299.8
-vmax = 301.2
+        solver.save(solver.get_filepath(data_dir, experiment_name))
 
-# fig, ax = plt.subplots(1, 1, sharex=True, sharey=True)
-# im = solver.plot_solution(ax, dim=2, vmin=vmin, vmax=vmax, plot_func=plot_func)
-# cbar = plt.colorbar(im, ax=ax)
-# cbar.ax.tick_params(labelsize=8)
-# plt.show()
-# exit(0)
+if rank == 0:
+    plot_func = lambda s: s.project_H1(s.hs / s.h)
+    plt.rcParams['font.size'] = '12'
+    fig, axs = plt.subplots(2, 2, sharex=True, sharey=True)
 
-fig, axs = plt.subplots(2, 2, sharex=True, sharey=True)
-T = 100
+    solver_plot = Euler2D(xmap, zmap, poly_order, nx, g=g, cfl=0.5, a=0.5, nz=nz, upwind=True, nprocx=1)
 
-for i in range(4):
+    energy = []
+    for i, tend in enumerate(tends):
 
-    tend = solver.time + (T / 4)
-    t0 = time.time()
-    while solver.time <= tend:
-        solver.time_step()
+        filepaths = [solver_plot.get_filepath(data_dir, experiment_name, proc=i, nprocx=size, time=tend) for i in range(size)]
+        solver_plot.load(filepaths)
+        energy.append(solver_plot.integrate(solver_plot.energy()))
 
-    t1 = time.time()
-    print('Walltime:', t1 - t0, "s. Simulation time: ", solver.time, "s.")
-    ax = axs[i // 2][i % 2]
+        ax = axs[i // 2][i % 2]
+        ax.set_xlim(-0.25 * xlim, 0.25 * xlim)
 
-    im = solver.plot_solution(ax, dim=2, vmin=vmin, vmax=vmax, plot_func=plot_func)
-    cbar = plt.colorbar(im, ax=ax)
-    cbar.ax.tick_params(labelsize=8)
+        im = solver_plot.plot_solution(ax, dim=2, plot_func=plot_func)
+        cbar = plt.colorbar(im, ax=ax)
+        cbar.ax.tick_params(labelsize=8)
 
-E = solver.integrate(solver.energy()).numpy()
-print('Energy:', E)
-print("Relative energy change:", (E - E0) / E0)
+    print("Relative energy change:", (energy[-1] - energy[0]) / energy[0])
+    plt.savefig(solver_plot.get_filepath(plot_dir, experiment_name, ext='png'))
+    plt.show()
 
-plt.savefig(f'./plots/2D-dry-bubble-snaps-n{nx}-p{poly_order}.png')
-plt.show()

@@ -220,6 +220,11 @@ class DryEuler2D:
         self.hs_right[:, -1] = b[:, 0, :, 0]
         self.hs_left[:, 0] = b[:, -1, :, -1]
 
+    def get_dt(self):
+        speed = self.wave_speed(self.u, self.v, self.h, self.hs)
+        dt = self.cdt / torch.max(speed).cpu().numpy()
+
+        return dt
     def time_step(self, dt=None, order=3, forcing=None):
         if dt is None:
             speed = self.wave_speed(self.u, self.v, self.h, self.hs)
@@ -228,33 +233,52 @@ class DryEuler2D:
         if order == 3:
             uk_1, vk_1, hk_1, hsk_1 = self.solve(self.u, self.v, self.h, self.hs, self.time, dt)
 
-            # SSPRK3
-            u_1 = self.u + dt * uk_1
-            v_1 = self.v + dt * vk_1
-            h_1 = self.h + dt * hk_1
-            hs_1 = self.hs + dt * hsk_1
-            if (hs_1 < 0).any() and not self.passive:
-                print(
-                    'Entropy-enstrophy:',
-                    self.integrate(self.energy()).numpy(),
-                    self.integrate(self.entropy()).numpy()
-                )
-                print('b1 crash!', self.time, self.h.min(), (self.hs / self.h).min())
-                raise ValueError
+            # # SSPRK3
+            # u_1 = self.u + dt * uk_1
+            # v_1 = self.v + dt * vk_1
+            # h_1 = self.h + dt * hk_1
+            # hs_1 = self.hs + dt * hsk_1
+            #
+            # uk_2, vk_2, hk_2, hsk_2 = self.solve(u_1, v_1, h_1, hs_1, self.time + dt, dt)
+            #
+            # u_2 = 0.75 * self.u + 0.25 * (u_1 + uk_2 * dt)
+            # v_2 = 0.75 * self.v + 0.25 * (v_1 + vk_2 * dt)
+            # h_2 = 0.75 * self.h + 0.25 * (h_1 + hk_2 * dt)
+            # hs_2 = 0.75 * self.hs + 0.25 * (hs_1 + hsk_2 * dt)
+            #
+            # uk_3, vk_3, hk_3, hsk_3 = self.solve(u_2, v_2, h_2, hs_2, self.time + 0.5 * dt, dt)
+            #
+            # self.u = (self.u + 2 * (u_2 + dt * uk_3)) / 3
+            # self.v = (self.v + 2 * (v_2 + dt * vk_3)) / 3
+            # self.h = (self.h + 2 * (h_2 + dt * hk_3)) / 3
+            # self.hs = (self.hs + 2 * (hs_2 + dt * hsk_3)) / 3
+
+            # SSPRK34
+            u_1 = 0.5 * self.u + 0.5 * (self.u + dt * uk_1)
+            v_1 = 0.5 * self.v + 0.5 * (self.v + dt * vk_1)
+            h_1 = 0.5 * self.h + 0.5 * (self.h + dt * hk_1)
+            hs_1 = 0.5 * self.hs + 0.5 * (self.hs + dt * hsk_1)
 
             uk_2, vk_2, hk_2, hsk_2 = self.solve(u_1, v_1, h_1, hs_1, self.time + dt, dt)
 
-            u_2 = 0.75 * self.u + 0.25 * (u_1 + uk_2 * dt)
-            v_2 = 0.75 * self.v + 0.25 * (v_1 + vk_2 * dt)
-            h_2 = 0.75 * self.h + 0.25 * (h_1 + hk_2 * dt)
-            hs_2 = 0.75 * self.hs + 0.25 * (hs_1 + hsk_2 * dt)
+            u_2 = 0.5 * u_1 + 0.5 * (u_1 + dt * uk_2)
+            v_2 = 0.5 * v_1 + 0.5 * (v_1 + dt * vk_2)
+            h_2 = 0.5 * h_1 + 0.5 * (h_1 + dt * hk_2)
+            hs_2 = 0.5 * hs_1 + 0.5 * (hs_1 + dt * hsk_2)
 
             uk_3, vk_3, hk_3, hsk_3 = self.solve(u_2, v_2, h_2, hs_2, self.time + 0.5 * dt, dt)
 
-            self.u = (self.u + 2 * (u_2 + dt * uk_3)) / 3
-            self.v = (self.v + 2 * (v_2 + dt * vk_3)) / 3
-            self.h = (self.h + 2 * (h_2 + dt * hk_3)) / 3
-            self.hs = (self.hs + 2 * (hs_2 + dt * hsk_3)) / 3
+            u_3 = (2 / 3) * self.u + (1 / 6) * u_2 + (1 / 6) * (u_2 + dt * uk_3)
+            v_3 = (2 / 3) * self.v + (1 / 6) * v_2 + (1 / 6) * (v_2 + dt * vk_3)
+            h_3 = (2 / 3) * self.h + (1 / 6) * h_2 + (1 / 6) * (h_2 + dt * hk_3)
+            hs_3 = (2 / 3) * self.hs + (1 / 6) * hs_2 + (1 / 6) * (hs_2 + dt * hsk_3)
+
+            uk_4, vk_4, hk_4, hsk_4 = self.solve(u_3, v_3, h_3, hs_3, self.time + 0.5 * dt, dt)
+
+            self.u = 0.5 * u_3 + 0.5 * (u_3 + dt * uk_4)
+            self.v = 0.5 * v_3 + 0.5 * (v_3 + dt * vk_4)
+            self.h = 0.5 * h_3 + 0.5 * (h_3 + dt * hk_4)
+            self.hs = 0.5 * hs_3 + 0.5 * (hs_3 + dt * hsk_4)
 
         else:
             raise ValueError(f"order: expected one of [3], found {order}.")
@@ -573,3 +597,22 @@ class DryEuler2D:
         e = u + (p / h)
 
         return e, T, p, u
+
+    def project_H1(self, u):
+        u_sum = 0.0 + u
+        count = 1.0 + u - u
+
+        for tnsr in [u_sum, count]:
+            tnsr[:, 1:, :, 0] = tnsr[:, 1:, :, 0] + tnsr[:, :-1, :, -1]
+            tnsr[:, :-1, :, -1] = tnsr[:, 1:, :, 0]
+
+            tnsr[1:, :, 0] = tnsr[1:, :, 0] + tnsr[:-1, :, -1]
+            tnsr[:-1, :, -1] = tnsr[1:, :, 0]
+
+            tnsr[:, 0, :, 0] = tnsr[:, 0, :, 0] + tnsr[:, -1, :, -1]
+            tnsr[:, -1, :, -1] = tnsr[:, 0, :, 0]
+
+            tnsr[0, :, 0] = tnsr[0, :, 0] + tnsr[-1, :, -1]
+            tnsr[-1, :, -1] = tnsr[0, :, 0]
+
+        return u_sum / count
