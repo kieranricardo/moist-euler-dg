@@ -1,11 +1,5 @@
 import numpy as np
-from imex_solvers import utils
 from moist_euler_dg.euler_2D import Euler2D
-import scipy
-from imex_solvers.utils import block_matmat, block_matvec, broadcast_matmat
-from mpi4py import MPI
-import time
-import os
 
 
 class TwoPhaseEuler2D(Euler2D):

@@ -1,7 +1,5 @@
 import numpy as np
-from imex_solvers import utils
-import scipy
-from imex_solvers.utils import block_matmat, block_matvec, broadcast_matmat
+from moist_euler_dg import utils
 from mpi4py import MPI
 import time
 import os
