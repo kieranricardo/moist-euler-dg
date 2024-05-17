@@ -86,19 +86,18 @@ class TwoPhaseEuler2D(Euler2D):
     def check_positivity(self, state):
         u, v, h, s, qw = self.get_vars(state)
 
+        # h_limited, h_cell_means = self.positivity_preserving_limiter(h)
+        # h[:] = h_limited
+        #
+        # if (h_cell_means <= 0).any():
+        #     print("Negative density cell mean detected")
+        #     exit(0)
+        #
+        # if (h <= 0).any():
+        #     print("Negative density :( ")
+        #     exit(0)
+
         hqw = h * qw
-
-        h_limited, h_cell_means = self.positivity_preserving_limiter(h)
-        h[:] = h_limited
-
-        if (h_cell_means <= 0).any():
-            print("Negative density cell mean detected")
-            exit(0)
-
-        if (h <= 0).any():
-            print("Negative density :( ")
-            exit(0)
-
         hqw_limited, hqw_cell_means = self.positivity_preserving_limiter(hqw)
         qw[:] = hqw_limited / h
 
@@ -263,8 +262,8 @@ class TwoPhaseEuler2D(Euler2D):
             dveldtp += ahat * (num_flux - fluxp) / self.weights_z[-1]
             dveldtm += -ahat * (num_flux - fluxm) / self.weights_z[-1]
 
-            dsdtp += (F_num_flux / hp) * (ahat - ap) / self.weights_z[-1]
-            dsdtm += -(F_num_flux / hm) * (ahat - am) / self.weights_z[-1]
+            dadtp += (F_num_flux / hp) * (ahat - ap) / self.weights_z[-1]
+            dadtm += -(F_num_flux / hm) * (ahat - am) / self.weights_z[-1]
 
         # dissipation from jump in normal direction
         normal_jump = normal_vel_p - normal_vel_m
