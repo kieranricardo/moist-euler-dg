@@ -168,11 +168,6 @@ class TwoPhaseEuler2D(Euler2D):
             dhdt[im] += -(0.0 - Fz[im]) / self.weights_z[-1]
             normal_vel = Fz[im] / (self.norm_grad_zeta[im] * h[im])
             dwdt[im] += -2 * self.a * (c_sound[im] + np.abs(normal_vel)) * normal_vel / self.weights_z[-1]
-        elif self.top_bc == 'open':
-            im = self.im_vert_ext
-            state_m, dstatedt_m = self.get_boundary_data(state, im), self.get_boundary_data(dstatedt, im)
-            dstatedt_p = np.zeros_like(dstatedt_m)
-            self.solve_boundaries(self.top_boundary, state_m, dstatedt_p, dstatedt_m, 'z', idx=im)
         else:
             raise NotImplementedError
 
@@ -337,7 +332,7 @@ class TwoPhaseEuler2D(Euler2D):
 
         qd = 1 - qw
 
-        qv = self.solve_qv_from_entropy(h, qw, s, qv=self.qv)
+        qv = self.solve_qv_from_entropy(h, qw, s, qv=None)
 
         qv = np.minimum(qv, qw)
 
