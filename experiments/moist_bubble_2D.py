@@ -26,7 +26,9 @@ eps = 0.8
 g = 9.81
 poly_order = 3
 
-experiment_name = f'two-phase-bubble-nx-{nx}-nz-{nz}-p{poly_order}'
+
+exp_name_short = 'bryan-fritsch-bubble'
+experiment_name = f'{exp_name_short}-nx-{nx}-nz-{nz}-p{poly_order}'
 data_dir = os.path.join('data', experiment_name)
 plot_dir = os.path.join('plots', experiment_name)
 
@@ -128,7 +130,7 @@ if run_model:
             print("Simulation time (unit less):", solver.time)
             print("Wall time:", time.time() - t0, '\n')
 
-        solver.save(solver.get_filepath(data_dir, experiment_name))
+        solver.save(solver.get_filepath(data_dir, exp_name_short))
 
 # plotting
 if rank == 0:
@@ -159,7 +161,7 @@ if rank == 0:
 
     energy = []
     for i, tend in enumerate(tends):
-        filepaths = [solver_plot.get_filepath(data_dir, experiment_name, proc=i, nprocx=size, time=tend) for i in range(size)]
+        filepaths = [solver_plot.get_filepath(data_dir, exp_name_short, proc=i, nprocx=size, time=tend) for i in range(size)]
         solver_plot.load(filepaths)
         energy.append(solver_plot.integrate(solver_plot.energy()))
 
@@ -173,6 +175,6 @@ if rank == 0:
 
 
     for (fig, ax), label in zip(fig_list, labels):
-        plot_name = f'{label}_{experiment_name}'
+        plot_name = f'{label}_{exp_name_short}'
         fp = solver_plot.get_filepath(plot_dir, plot_name, ext='png')
         fig.savefig(fp, bbox_inches="tight")

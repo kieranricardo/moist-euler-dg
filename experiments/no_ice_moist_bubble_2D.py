@@ -27,7 +27,7 @@ eps = 0.8
 g = 9.81
 poly_order = 3
 
-exp_name_short = 'no-ice-phase-bubble'
+exp_name_short = 'no-ice-bubble'
 experiment_name = f'{exp_name_short}-nx-{nx}-nz-{nz}-p{poly_order}'
 data_dir = os.path.join('data', experiment_name)
 plot_dir = os.path.join('plots', experiment_name)
