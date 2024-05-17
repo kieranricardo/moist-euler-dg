@@ -1,8 +1,8 @@
 #!/bin/bash
 
 #PBS -P dp9
-#PBS -q expresssr
-#PBS -l walltime=0:10:00
+#PBS -q normalsr
+#PBS -l walltime=2:00:00
 #PBS -l ncpus=104
 #PBS -l mem=140GB
 #PBS -l storage=gdata/hh5+gdata/tm70+gdata/ik11+scratch/kr97
