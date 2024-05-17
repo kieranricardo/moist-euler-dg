@@ -183,12 +183,13 @@ class TwoPhaseEuler2D(Euler2D):
         state_m, dstatedt_m = self.get_boundary_data(state, im), self.get_boundary_data(dstatedt, im)
         self.solve_boundaries(state_p, state_m, dstatedt_p, dstatedt_m, 'z', idx=ip)
 
-        # horizontal interior boundaries
-        ip = self.ip_horz_int
-        im = self.im_horz_int
-        state_p, dstatedt_p = self.get_boundary_data(state, ip), self.get_boundary_data(dstatedt, ip)
-        state_m, dstatedt_m = self.get_boundary_data(state, im), self.get_boundary_data(dstatedt, im)
-        self.solve_boundaries(state_p, state_m, dstatedt_p, dstatedt_m, 'x', idx=ip)
+        if self.nx > 1:
+            # horizontal interior boundaries
+            ip = self.ip_horz_int
+            im = self.im_horz_int
+            state_p, dstatedt_p = self.get_boundary_data(state, ip), self.get_boundary_data(dstatedt, ip)
+            state_m, dstatedt_m = self.get_boundary_data(state, im), self.get_boundary_data(dstatedt, im)
+            self.solve_boundaries(state_p, state_m, dstatedt_p, dstatedt_m, 'x', idx=ip)
 
         return dstatedt
 
@@ -433,7 +434,6 @@ class TwoPhaseEuler2D(Euler2D):
             rel_update = abs((val / grad) / qv).max()
             if rel_update < tol:
                 break
-
         self.gibbs_error = abs(val).max()
         if verbose:
             rel_update = abs((val / grad) / qv)

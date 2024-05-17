@@ -20,6 +20,8 @@ class Euler2D():
         self.upwind = upwind
         self.nprocx = nprocx
         self.buoyancy_relax = 1.0
+        self.comm = MPI.COMM_WORLD
+        self.rank = self.comm.Get_rank()
 
         self.cp = 1_005.0
         self.cv = 718.0

@@ -4,6 +4,7 @@ from moist_euler_dg.euler_2D import Euler2D
 import numpy as np
 import time
 import os
+import argparse
 from mpi4py import MPI
 
 
@@ -15,7 +16,10 @@ run_model = True # if false just plot most recent run
 xlim = 20_000
 zlim = 10_000
 
-nz = 10
+parser = argparse.ArgumentParser()
+parser.add_argument('--n', type=int, help='Number of cells')
+args = parser.parse_args()
+nz = args.n
 nx = 2 * nz
 eps = 1.4
 g = 9.81
