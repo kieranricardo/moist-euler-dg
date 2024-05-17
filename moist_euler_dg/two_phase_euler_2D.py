@@ -39,6 +39,82 @@ class TwoPhaseEuler2D(Euler2D):
         self.c0 = self.cpv + (self.Lv0 / self.T0) - self.cpv * np.log(self.T0) + self.Rv * np.log(self.p0)
         self.c1 = self.cl - self.cl * np.log(self.T0)
 
+    def time_step(self, dt=None):
+
+        if dt is None:
+            dt = self.get_dt()
+
+        k = self.private_working_arrays[1]
+        u_tmp = self.private_working_arrays[2]
+
+        self.solve(self.state, dstatedt=k)
+
+        u_tmp[:] = self.state + 0.5 * dt * k
+        self.check_positivity(u_tmp)
+        self.solve(u_tmp, dstatedt=k)
+
+        u_tmp[:] = u_tmp[:] + 0.5 * dt * k
+        self.check_positivity(u_tmp)
+        self.solve(u_tmp, dstatedt=k)
+
+        u_tmp[:] = (2 / 3) * self.state + (1 / 3) * u_tmp[:] + (1 / 6) * dt * k
+        self.check_positivity(u_tmp)
+        self.solve(u_tmp, dstatedt=k)
+
+        self.state[:] = u_tmp + 0.5 * dt * k
+        self.check_positivity(self.state)
+
+        self.time += dt
+
+    def positivity_preserving_limiter(self, in_tnsr):
+        cell_means = (in_tnsr * self.weights2D[None, None] * self.J).sum(axis=(2, 3)) / (self.weights2D[None, None] * self.J).sum(axis=(2, 3))
+        cell_diffs = in_tnsr - cell_means[..., None, None]
+
+        cell_mins = in_tnsr.min(axis=-1)
+        cell_mins = cell_mins.min(axis=-1)
+        diff_min = cell_mins - cell_means
+
+        new_min = np.maximum(1e-7 + 0 * cell_mins, cell_mins)
+        scale = (new_min - cell_means) / diff_min
+
+        out_tnsr = cell_means[..., None, None] + scale[..., None, None] * cell_diffs
+
+        # cell_means1 = (out_tnsr * self.weights2D[None, None] * self.J).sum(axis=(2, 3)) / (self.weights2D[None, None] * self.J).sum(axis=(2, 3))
+
+        return out_tnsr, cell_means
+
+    def check_positivity(self, state):
+        u, v, h, s, qw = self.get_vars(state)
+
+        hqw = h * qw
+
+        h_limited, h_cell_means = self.positivity_preserving_limiter(h)
+        h[:] = h_limited
+
+        if (h_cell_means <= 0).any():
+            print("Negative density cell mean detected")
+            exit(0)
+
+        if (h <= 0).any():
+            print("Negative density :( ")
+            exit(0)
+
+        hqw_limited, hqw_cell_means = self.positivity_preserving_limiter(hqw)
+        qw[:] = hqw_limited / h
+
+        if (hqw_cell_means <= 0).any():
+            print("Negative water cell mean detected")
+            # print("x-coords:", self.xs[state['hqw'] <= 0], "\n")
+            # print("y-coords:", self.ys[state['hqw'] <= 0], "\n")
+            exit(0)
+
+        if (qw <= 0).any():
+            print("Negative water mass - limiting failed :( ")
+            print('hqw_limited min:', hqw_limited.min())
+            # print("x-coords:", self.xs[state['hqw'] <= 0], "\n")
+            # print("y-coords:", self.ys[state['hqw'] <= 0], "\n")
+            exit(0)
+
     def get_fluxes(self, u, w, h, s, q, idx=slice(None)):
         vel_norm = self.grad_xi_2[idx] * u ** 2 + 2 * self.grad_xi_dot_zeta[idx] * u * w + self.grad_zeta_2[idx] * w ** 2
         e, T, p, _, mu = self.get_thermodynamic_quantities(h, s, q)

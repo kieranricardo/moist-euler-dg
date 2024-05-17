@@ -14,6 +14,8 @@ class ThreePhaseEuler2D(TwoPhaseEuler2D):
 
     def __init__(self, *args, **kwargs):
         TwoPhaseEuler2D.__init__(self, *args, **kwargs)
+        self.ql = None
+        self.qi = None
 
         self.cpd = 1_004.0
         self.Rd = 287.0
