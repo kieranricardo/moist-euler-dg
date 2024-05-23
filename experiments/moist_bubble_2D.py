@@ -14,6 +14,9 @@ size = comm.Get_size()
 
 parser = argparse.ArgumentParser()
 parser.add_argument('--n', type=int, help='Number of cells')
+parser.add_argument('--nproc', type=int, help='Number of procs')
+parser.add_argument('--plot', action='store_true')
+
 args = parser.parse_args()
 
 run_model = True # whether to run model - set false to just plot previous run
@@ -21,6 +24,8 @@ xlim = 20_000
 zlim = 10_000
 
 nz = args.n
+nproc = args.nproc
+run_model = (not args.plot)
 nx = 2 * nz
 eps = 0.8
 g = 9.81
@@ -43,9 +48,8 @@ comm.barrier()
 zmap = lambda x, z: z * zlim
 xmap = lambda x, z: xlim * (x - 0.5)
 
-solver = TwoPhaseEuler2D(xmap, zmap, poly_order, nx, g=g, cfl=0.5, a=0.5, nz=nz, upwind=True, nprocx=size)
 
-def initial_condition(xs, ys, solver):
+def initial_condition(xs, ys, solver, pert):
 
     u = 0 * ys
     v = 0 * ys
@@ -94,7 +98,7 @@ def initial_condition(xs, ys, solver):
     rad_max = 2_000
     rad = np.sqrt(xs ** 2 + (ys - 1.0*rad_max) ** 2)
     mask = rad < rad_max
-    density -= mask * (2 * density / 300) * (np.cos(np.pi * (rad / rad_max) / 2)**2)
+    density -= mask * (pert * density / 300) * (np.cos(np.pi * (rad / rad_max) / 2)**2)
 
     qv = solver.solve_qv_from_p(density, qw, p)
     R = (1 - qw) * solver.Rd + qv * solver.Rv
@@ -110,15 +114,15 @@ def initial_condition(xs, ys, solver):
     # print('Pressure min-max:', p.min(), p.max())
     # print('qv min-max:', qv.min(), qv.max(), '\n')
 
-    return u, v, density, s, qw, qv, qv0, ql0, qw0
-
-
-u, v, density, s, qw, qv, qv0, ql0, qw0 = initial_condition(solver.xs, solver.zs, solver)
-solver.set_initial_condition(u, v, density, s, qw)
+    return u, v, density, s, qw, qv
 
 tends = np.array([0.0, 400, 800, 1000])
 
 if run_model:
+    solver = TwoPhaseEuler2D(xmap, zmap, poly_order, nx, g=g, cfl=0.5, a=0.5, nz=nz, upwind=True, nprocx=nproc)
+    u, v, density, s, qw, qv = initial_condition(solver.xs, solver.zs, solver, pert=2.0)
+    solver.set_initial_condition(u, v, density, s, qw)
+
     for i, tend in enumerate(tends):
         t0 = time.time()
         while solver.time < tend:
@@ -137,7 +141,8 @@ if rank == 0:
     plt.rcParams['font.size'] = '12'
 
     solver_plot = TwoPhaseEuler2D(xmap, zmap, poly_order, nx, g=g, cfl=0.5, a=0.5, nz=nz, upwind=True, nprocx=1)
-    _, _, _, _, _, _, qv0, ql0, qw0 = initial_condition(solver_plot.xs, solver_plot.zs, solver_plot)
+    _, _, h0, s0, qw0, qv0 = initial_condition(solver_plot.xs, solver_plot.zs, solver_plot, pert=0.0)
+    ql0 = qw0 - qv0
 
     def fmt(x, pos):
         a, b = '{:.2e}'.format(x).split('e')
@@ -145,7 +150,7 @@ if rank == 0:
         return r'${} \times 10^{{{}}}$'.format(a, b)
 
     plot_func_entropy = lambda s: s.project_H1(s.s)
-    plot_func_density = lambda s: s.project_H1(s.h)
+    plot_func_density = lambda s: s.project_H1(s.h - h0)
     plot_func_water = lambda s: s.project_H1(s.q - qw0)
     plot_func_vapour = lambda s: s.project_H1(s.solve_qv_from_entropy(s.h, s.q, s.s) - qv0)
     plot_func_liquid = lambda s: s.project_H1(s.q - s.solve_qv_from_entropy(s.h, s.q, s.s) - ql0)
@@ -161,7 +166,7 @@ if rank == 0:
 
     energy = []
     for i, tend in enumerate(tends):
-        filepaths = [solver_plot.get_filepath(data_dir, exp_name_short, proc=i, nprocx=size, time=tend) for i in range(size)]
+        filepaths = [solver_plot.get_filepath(data_dir, exp_name_short, proc=i, nprocx=nproc, time=tend) for i in range(nproc)]
         solver_plot.load(filepaths)
         energy.append(solver_plot.integrate(solver_plot.energy()))
 
