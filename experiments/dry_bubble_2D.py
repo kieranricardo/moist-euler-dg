@@ -18,7 +18,7 @@ zlim = 10_000
 
 parser = argparse.ArgumentParser()
 parser.add_argument('--n', type=int, help='Number of cells')
-parser.add_argument('--nproc', type=int, help='Number of procs')
+parser.add_argument('--nproc', type=int, help='Number of procs', default=1)
 parser.add_argument('--plot', action='store_true')
 args = parser.parse_args()
 nproc = args.nproc
