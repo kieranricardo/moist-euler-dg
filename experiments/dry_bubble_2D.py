@@ -83,12 +83,12 @@ def initial_condition(solver, pert):
     return u, v, density, s
 
 
-tends = np.array([0.0, 400, 800, 1000])
+tends = np.array([0.0, 400, 800, 1000]) * 1.5
 
 if run_model:
     solver = Euler2D(xmap, zmap, poly_order, nx, g=g, cfl=0.5, a=0.5, nz=nz, upwind=True, nprocx=nproc)
     u, v, density, s = initial_condition(solver, pert=2.0)
-    solver.set_initial_condition(u, v, density, s, pert=2.0)
+    solver.set_initial_condition(u, v, density, s)
     for i, tend in enumerate(tends):
         t0 = time.time()
         while solver.time < tend:
@@ -141,6 +141,6 @@ if rank == 0:
         fp = solver_plot.get_filepath(plot_dir, plot_name, ext='png')
         fig.savefig(fp, bbox_inches="tight")
     print("Relative energy change:", (energy[-1] - energy[0]) / energy[0])
-    # plt.savefig(solver_plot.get_filepath(plot_dir, exp_name_short, ext='png'))
-    # plt.show()
+    plt.savefig(solver_plot.get_filepath(plot_dir, exp_name_short, ext='png'))
+    plt.show()
 

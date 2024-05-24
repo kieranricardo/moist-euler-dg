@@ -2,7 +2,7 @@
 
 #PBS -P dp9
 #PBS -q normalsr
-#PBS -l walltime=0:10:00
+#PBS -l walltime=0:05:00
 #PBS -l ncpus=104
 #PBS -l mem=140GB
 #PBS -l storage=gdata/hh5+gdata/tm70+gdata/ik11+scratch/kr97
@@ -14,7 +14,7 @@ module load openmpi
 
 export nz=10
 # export np=$(( 2*$nz ))
-export np=10
+export np=$nz
 
 mpirun -n $np python3 dry_bubble_2D.py --n $nz --nproc $np
 mpirun -n $np python3 moist_bubble_2D.py --n $nz --nproc $np

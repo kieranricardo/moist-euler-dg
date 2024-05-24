@@ -117,9 +117,9 @@ def initial_condition(xs, ys, solver, pert):
     return u, v, density, s, qw, qv
 
 tends = np.array([0.0, 400, 800, 1000])
-
+a = 0.0
 if run_model:
-    solver = TwoPhaseEuler2D(xmap, zmap, poly_order, nx, g=g, cfl=0.5, a=0.5, nz=nz, upwind=True, nprocx=nproc)
+    solver = TwoPhaseEuler2D(xmap, zmap, poly_order, nx, g=g, cfl=0.5, a=a, nz=nz, upwind=True, nprocx=nproc)
     u, v, density, s, qw, qv = initial_condition(solver.xs, solver.zs, solver, pert=2.0)
     solver.set_initial_condition(u, v, density, s, qw)
 
@@ -140,7 +140,7 @@ if run_model:
 if rank == 0:
     plt.rcParams['font.size'] = '12'
 
-    solver_plot = TwoPhaseEuler2D(xmap, zmap, poly_order, nx, g=g, cfl=0.5, a=0.5, nz=nz, upwind=True, nprocx=1)
+    solver_plot = TwoPhaseEuler2D(xmap, zmap, poly_order, nx, g=g, cfl=0.5, a=a, nz=nz, upwind=True, nprocx=1)
     _, _, h0, s0, qw0, qv0 = initial_condition(solver_plot.xs, solver_plot.zs, solver_plot, pert=0.0)
     ql0 = qw0 - qv0
 
