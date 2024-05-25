@@ -86,7 +86,7 @@ def initial_condition(solver, pert):
 tends = np.array([0.0, 400, 800, 1000]) * 1.5
 
 if run_model:
-    solver = Euler2D(xmap, zmap, poly_order, nx, g=g, cfl=0.5, a=0.5, nz=nz, upwind=True, nprocx=nproc)
+    solver = Euler2D(xmap, zmap, poly_order, nx, g=g, cfl=1.0, a=0.5, nz=nz, upwind=True, nprocx=nproc)
     u, v, density, s = initial_condition(solver, pert=2.0)
     solver.set_initial_condition(u, v, density, s)
     for i, tend in enumerate(tends):
@@ -111,7 +111,7 @@ if rank == 0:
         b = int(b)
         return r'${} \times 10^{{{}}}$'.format(a, b)
 
-    solver_plot = Euler2D(xmap, zmap, poly_order, nx, g=g, cfl=0.5, a=0.5, nz=nz, upwind=True, nprocx=1)
+    solver_plot = Euler2D(xmap, zmap, poly_order, nx, g=g, cfl=1.0, a=0.5, nz=nz, upwind=True, nprocx=1)
     _, _, h0, s0 = initial_condition(solver_plot, pert=0.0)
 
     plot_func_entropy = lambda s: s.project_H1(s.s)

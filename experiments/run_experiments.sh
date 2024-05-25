@@ -2,7 +2,7 @@
 
 #PBS -P dp9
 #PBS -q normalsr
-#PBS -l walltime=0:05:00
+#PBS -l walltime=1:00:00
 #PBS -l ncpus=104
 #PBS -l mem=140GB
 #PBS -l storage=gdata/hh5+gdata/tm70+gdata/ik11+scratch/kr97
@@ -12,7 +12,7 @@ module use /g/data/hh5/public/modules
 module load conda/analysis3
 module load openmpi
 
-export nz=10
+export nz=32
 # export np=$(( 2*$nz ))
 export np=$nz
 
