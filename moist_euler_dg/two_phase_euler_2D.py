@@ -220,8 +220,10 @@ class TwoPhaseEuler2D(Euler2D):
         drdxi_2 = self.drdxi_2[idx]
         drdzeta_2 = self.drdzeta_2[idx]
 
-        normal_vel_p = Fp / (hp * norm_conrta)
-        normal_vel_m = Fm / (hm * norm_conrta)
+        # normal_vel_p = Fp / (hp * norm_conrta)
+        # normal_vel_m = Fm / (hm * norm_conrta)
+        normal_vel_p = Fp / (0.5 * (hp + hm) * norm_conrta)
+        normal_vel_m = Fm / (0.5 * (hp + hm) * norm_conrta)
 
         c_adv = np.abs(0.5 * (normal_vel_p + normal_vel_m))
         c_snd = 0.5 * (cp + cm)
@@ -263,14 +265,14 @@ class TwoPhaseEuler2D(Euler2D):
         dveldtm += -diss / self.weights_z[-1]
 
         # dissipation from jump in tangent direction
-        tang_jump = tan_velp - tan_velm
-        diss = -self.a * c_adv * tang_jump
+        # tang_jump = tan_velp - tan_velm
+        # diss = -self.a * c_adv * tang_jump
 
-        dtan_veldtp += diss * norm_cov / (J * self.weights_z[-1])
-        dtan_veldtm += -diss * norm_cov / (J * self.weights_z[-1])
+        # dtan_veldtp += diss * norm_cov / (J * self.weights_z[-1])
+        # dtan_veldtm += -diss * norm_cov / (J * self.weights_z[-1])
 
-        dveldtp += diss * dr_xi_dot_zeta / (J * self.weights_z[-1] * norm_cov)
-        dveldtm += -diss * dr_xi_dot_zeta / (J * self.weights_z[-1] * norm_cov)
+        # dveldtp += diss * dr_xi_dot_zeta / (J * self.weights_z[-1] * norm_cov)
+        # dveldtm += -diss * dr_xi_dot_zeta / (J * self.weights_z[-1] * norm_cov)
 
         # vorticity terms
         if direction == 'z':

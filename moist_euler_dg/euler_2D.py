@@ -323,31 +323,41 @@ class Euler2D():
         dudt -= self.g * self.u_grav
         dwdt -= self.g * self.w_grav
 
-        vort = (self.ddxi(w) - self.ddzeta(u)) / self.J + self.f
+        # vort = (self.ddxi(w) - self.ddzeta(u)) / self.J + self.f
 
-        u_perp = (-self.drdxi_2 * w + self.dr_xi_dot_zeta * u) / self.J
-        w_perp = (-self.dr_xi_dot_zeta * w + self.drdzeta_2 * u) / self.J
+        # u_perp = (-self.drdxi_2 * w + self.dr_xi_dot_zeta * u) / self.J
+        # w_perp = (-self.dr_xi_dot_zeta * w + self.drdzeta_2 * u) / self.J
 
-        dudt -= vort * u_perp
-        dwdt -= vort * w_perp
+        # dudt -= vort * u_perp
+        # dwdt -= vort * w_perp
+        u1, u3 = Fx / h, Fz / h
+
+        dudz = self.ddzeta(u)
+        dwdx = self.ddxi(w)
+        dudt -= (u3 * dudz - u3 * dwdx)
+        dwdt -= (u1 * dwdx - u1 * dudz)
 
         # bottom wall BCs
         ip = self.ip_vert_ext
         dhdt[ip] += (0.0 - Fz[ip]) / self.weights_z[-1]
         normal_vel = Fz[ip] / (self.norm_grad_zeta[ip] * h[ip])
-        dwdt[ip] += -2 * self.a * (c_sound[ip] + np.abs(normal_vel)) * normal_vel / self.weights_z[-1]
+        diss = -2 * self.a * (c_sound[ip] + np.abs(normal_vel)) * normal_vel
+        dwdt[ip] += diss / self.weights_z[-1]
+
+        energy_diss = Fz[ip] * diss / self.weights_z[-1]
+        dsdt[ip] -= energy_diss / (h[ip] * T[ip])
 
         # top wall BCs
         if self.top_bc == 'wall':
             im = self.im_vert_ext
             dhdt[im] += -(0.0 - Fz[im]) / self.weights_z[-1]
             normal_vel = Fz[im] / (self.norm_grad_zeta[im] * h[im])
-            dwdt[im] += -2 * self.a * (c_sound[im] + np.abs(normal_vel)) * normal_vel / self.weights_z[-1]
-        elif self.top_bc == 'open':
-            im = self.im_vert_ext
-            state_m, dstatedt_m = self.get_boundary_data(state, im), self.get_boundary_data(dstatedt, im)
-            dstatedt_p = np.zeros_like(dstatedt_m)
-            self.solve_boundaries(self.top_boundary, state_m, dstatedt_p, dstatedt_m, 'z', idx=im)
+            diss = -2 * self.a * (c_sound[im] + np.abs(normal_vel)) * normal_vel
+            dwdt[im] += diss / self.weights_z[-1]
+
+            energy_diss = Fz[im] * diss / self.weights_z[-1]
+            dsdt[im] -= energy_diss / (h[im] * T[im])
+
         else:
             raise NotImplementedError
 
@@ -380,14 +390,14 @@ class Euler2D():
         Gm, cm, Tm, Fxm, Fzm = self.get_fluxes(um, wm, hm, sm, idx)
 
         if direction == 'z':
-            norm_conrta = self.norm_grad_zeta[idx]
+            norm_contra = self.norm_grad_zeta[idx]
             norm_cov = self.norm_drdxi[idx]
             Fp, Fm = Fzp, Fzm
             dveldtp, dveldtm = dwdtp, dwdtm
             dtan_veldtp, dtan_veldtm = dudtp, dudtm
             tan_velp, tan_velm = up, um
         else:
-            norm_conrta = self.norm_grad_xi[idx]
+            norm_contra = self.norm_grad_xi[idx]
             norm_cov = self.norm_drdzeta[idx]
             Fp, Fm = Fxp, Fxm
             dveldtp, dveldtm = dudtp, dudtm
@@ -399,13 +409,13 @@ class Euler2D():
         drdxi_2 = self.drdxi_2[idx]
         drdzeta_2 = self.drdzeta_2[idx]
 
-        normal_vel_p = Fp / (hp * norm_conrta)
-        normal_vel_m = Fm / (hm * norm_conrta)
+        normal_vel_p = Fp / (hp * norm_contra)
+        normal_vel_m = Fm / (hm * norm_contra)
 
         c_adv = np.abs(0.5 * (normal_vel_p + normal_vel_m))
         c_snd = 0.5 * (cp + cm)
 
-        F_num_flux = 0.5 * (Fp + Fm) - self.ah * (c_adv + c_snd) * (hp - hm) * norm_conrta
+        F_num_flux = 0.5 * (Fp + Fm) - self.ah * (c_adv + c_snd) * (hp - hm) * norm_contra
 
         if self.upwind:
             shat = (F_num_flux >= 0) * sm + (F_num_flux < 0) * sp
@@ -433,40 +443,48 @@ class Euler2D():
         dsdtm += -(F_num_flux / hm) * (shat - sm) / self.weights_z[-1]
 
         # dissipation from jump in normal direction
-        normal_jump = normal_vel_p - normal_vel_m
+        normal_jump = (Fp - Fm) / (0.5 * (hp + hm) * norm_contra)
         diss = -self.a * (c_adv + c_snd) * normal_jump
 
         dveldtp += diss / self.weights_z[-1]
         dveldtm += -diss / self.weights_z[-1]
+        
+        energy_diss = (Fp - Fm) * diss / self.weights_z[-1]
+        dsdtp -= 0.5 * energy_diss / (hp * Tp)
+        dsdtm -= 0.5 * energy_diss / (hm * Tm)
 
         # dissipation from jump in tangent direction
-        tang_jump = tan_velp - tan_velm
-        diss = -self.a * c_adv * tang_jump
+        # tang_jump = tan_velp - tan_velm
+        # diss = -self.a * c_adv * tang_jump
 
-        dtan_veldtp += diss * norm_cov / (J * self.weights_z[-1])
-        dtan_veldtm += -diss * norm_cov / (J * self.weights_z[-1])
-
-        dveldtp += diss * dr_xi_dot_zeta / (J * self.weights_z[-1] * norm_cov)
-        dveldtm += -diss * dr_xi_dot_zeta / (J * self.weights_z[-1] * norm_cov)
+        # dtan_veldtp += diss * norm_contra / self.weights_z[-1]
+        # dtan_veldtm += -diss * norm_contra / self.weights_z[-1]
 
         # vorticity terms
+        # dudt -= (u3 * dudz - u3 * dwdx)
+        # dwdt -= (u1 * dwdx - u1 * dudz)
+        u1p, u1m = Fxp / hp, Fxm / hm
+        u3p, u3m = Fzp / hp, Fzm / hm
         if direction == 'z':
-            fluxp = -up
-            fluxm = -um
+            fluxp = up
+            fluxm = um
+            num_flux = 0.5 * (fluxp + fluxm)
+            
+            dudtp += u3p * (num_flux - fluxp) / self.weights_z[-1]
+            dudtm += -u3m * (num_flux - fluxm) / self.weights_z[-1]
+
+            dwdtp += -u1p * (num_flux - fluxp) / self.weights_z[-1]
+            dwdtm += u1m * (num_flux - fluxm) / self.weights_z[-1]
         else:
             fluxp = wp
             fluxm = wm
+            num_flux = 0.5 * (fluxp + fluxm)
 
-        u_perp_p = (-drdxi_2 * wp + dr_xi_dot_zeta * up) / J
-        w_perp_p = (-dr_xi_dot_zeta * wp + drdzeta_2 * up) / J
-        u_perp_m = (-drdxi_2 * wm + dr_xi_dot_zeta * um) / J
-        w_perp_m = (-dr_xi_dot_zeta * wm + drdzeta_2 * um) / J
-
-        num_flux = 0.5 * (fluxp + fluxm)
-        dudtp += u_perp_p * (num_flux - fluxp) / (J * self.weights_z[-1])
-        dudtm += -u_perp_m * (num_flux - fluxm) / (J * self.weights_z[-1])
-        dwdtp += w_perp_p * (num_flux - fluxp) / (J * self.weights_z[-1])
-        dwdtm += -w_perp_m * (num_flux - fluxm) / (J * self.weights_z[-1])
+            dwdtp += u1p * (num_flux - fluxp) / self.weights_z[-1]
+            dwdtm += -u1m * (num_flux - fluxm) / self.weights_z[-1]
+            
+            dudtp += -u3p * (num_flux - fluxp) / self.weights_z[-1]
+            dudtm += u3m * (num_flux - fluxm) / self.weights_z[-1]
 
         return 0.0
 
