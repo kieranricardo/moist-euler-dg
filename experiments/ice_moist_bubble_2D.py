@@ -42,10 +42,6 @@ comm.barrier()
 zmap = lambda x, z: z * zlim
 xmap = lambda x, z: xlim * (x - 0.5)
 
-solver = ThreePhaseEuler2D(xmap, zmap, poly_order, nx, g=g, cfl=1.0, a=0.5, nz=nz, upwind=True, nprocx=size)
-
-
-
 def initial_condition(xs, ys, solver, pert):
 
     u = 0 * ys
@@ -92,20 +88,26 @@ def initial_condition(xs, ys, solver, pert):
 
 run_time = 600
 
-u, v, density, s, qw, qv, ql, qi = initial_condition(
-    solver.xs,
-    solver.zs,
-    solver,
-    pert=2.0
-)
-solver.set_initial_condition(u, v, density, s, qw)
+tends = np.array([0.0, 200.0, 400.0, 600.0]) / 10
 
-tends = np.array([0.0, 200.0, 400.0, 600.0])
+conservation_data_fp = os.path.join(data_dir, 'conservation_data.npy')
+time_list = []
+energy_list = []
+entropy_list = []
+water_var_list = []
 
 if run_model:
+    solver = ThreePhaseEuler2D(xmap, zmap, poly_order, nx, g=g, cfl=0.25, a=0.0, nz=nz, upwind=False, nprocx=size)
+    u, v, density, s, qw, qv, ql, qi = initial_condition(solver.xs, solver.zs, solver, pert=2.0)
+    solver.set_initial_condition(u, v, density, s, qw)
     for i, tend in enumerate(tends):
         t0 = time.time()
         while solver.time < tend:
+            time_list.append(solver.time)
+            energy_list.append(solver.energy())
+            entropy_list.append(solver.integrate(solver.h * solver.s))
+            water_var_list.append(solver.integrate(solver.h * solver.q**2))
+
             dt = min(solver.get_dt(), tend - solver.time)
             solver.time_step(dt=dt)
         t1 = time.time()
@@ -116,9 +118,43 @@ if run_model:
 
         solver.save(solver.get_filepath(data_dir, exp_name_short))
 
+    if rank == 0:
+        conservation_data = np.zeros((4, len(time_list)))
+        conservation_data[0, :] = np.array(time_list)
+        conservation_data[1, :] = np.array(energy_list)
+        conservation_data[2, :] = np.array(entropy_list)
+        conservation_data[3, :] = np.array(water_var_list)
+        np.save(conservation_data_fp, conservation_data)
+
 # plotting
 if rank == 0:
     plt.rcParams['font.size'] = '12'
+
+    conservation_data = np.load(conservation_data_fp)
+    time_list = conservation_data[0, :]
+    energy_list = conservation_data[1, :]
+    entropy_list = conservation_data[2, :]
+    water_var_list = conservation_data[3, :]
+    
+    energy_list = (energy_list - energy_list[0]) / energy_list[0]
+    entropy_list = (entropy_list - entropy_list[0]) / entropy_list[0]
+    water_var_list = (water_var_list - water_var_list[0]) / water_var_list[0]
+
+    print('Energy error:', energy_list[-1])
+    print('Entropy error:', entropy_list[-1])
+    print('Water var error:', water_var_list[-1])
+
+    plt.figure()
+    plt.plot(time_list, energy_list, label='Energy')
+    plt.plot(time_list, entropy_list, label='Entropy')
+    plt.plot(time_list, water_var_list, label='Water variance')
+    plt.grid()
+    plt.legend()
+    plt.yscale('symlog', linthresh=1e-15)
+    fp = os.path.join(plot_dir, f'conservation_{exp_name_short}')
+    plt.savefig(fp, bbox_inches="tight")
+    plt.show()
+    exit(0)
 
     solver_plot = ThreePhaseEuler2D(xmap, zmap, poly_order, nx, g=g, cfl=0.5, a=0.5, nz=nz, upwind=True, nprocx=1)
     _, _, _, s0, qw0, qv0, ql0, qi0 = initial_condition(solver_plot.xs, solver_plot.zs, solver_plot, pert=0.0)

@@ -68,11 +68,14 @@ class ThreePhaseEuler2D(TwoPhaseEuler2D):
     def gibbs_ice(self, T, mathlib=np):
         return -self.ci * T * mathlib.log(T / self.T0)
 
-    def get_thermodynamic_quantities(self, density, entropy, qw):
+    def get_thermodynamic_quantities(self, density, entropy, qw, qv_init=None, ql_init=None):
 
         qd = 1 - qw
-
-        qv, ql, qi = self.solve_fractions_from_entropy(density, qw, entropy, mathlib=np, qv=self.qv, ql=self.ql, qi=self.qi)
+        if qv_init is not None:
+            qi_init = qw - qv_init - ql_init
+        else:
+            qi_init = None
+        qv, ql, qi = self.solve_fractions_from_entropy(density, qw, entropy, mathlib=np, qv=qv_init, ql=ql_init, qi=qi_init)
 
         R = qv * self.Rv + qd * self.Rd
         cv = qd * self.cvd + qv * self.cvv + ql * self.cl + qi * self.ci
@@ -119,7 +122,7 @@ class ThreePhaseEuler2D(TwoPhaseEuler2D):
 
         mu = chemical_potential_v - chemical_potential_d
 
-        return enthalpy, T, p, ie, mu
+        return enthalpy, T, p, ie, mu, qv, ql
 
     def rh_to_qw(self, rh, p, density, mathlib=np):
 

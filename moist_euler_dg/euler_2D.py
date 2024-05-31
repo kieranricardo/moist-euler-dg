@@ -323,11 +323,6 @@ class Euler2D():
         dudt -= self.g * self.u_grav
         dwdt -= self.g * self.w_grav
 
-        # vort = (self.ddxi(w) - self.ddzeta(u)) / self.J + self.f
-
-        # u_perp = (-self.drdxi_2 * w + self.dr_xi_dot_zeta * u) / self.J
-        # w_perp = (-self.dr_xi_dot_zeta * w + self.drdzeta_2 * u) / self.J
-
         # dudt -= vort * u_perp
         # dwdt -= vort * w_perp
         u1, u3 = Fx / h, Fz / h
@@ -450,15 +445,21 @@ class Euler2D():
         dveldtm += -diss / self.weights_z[-1]
         
         energy_diss = (Fp - Fm) * diss / self.weights_z[-1]
-        dsdtp -= 0.5 * energy_diss / (hp * Tp)
-        dsdtm -= 0.5 * energy_diss / (hm * Tm)
 
         # dissipation from jump in tangent direction
         # tang_jump = tan_velp - tan_velm
-        # diss = -self.a * c_adv * tang_jump
+        # diss = -self.a * (c_adv) * tang_jump
 
         # dtan_veldtp += diss * norm_contra / self.weights_z[-1]
         # dtan_veldtm += -diss * norm_contra / self.weights_z[-1]
+
+        # if direction == 'z':
+        #     energy_diss += (Fxp - Fxm) * diss * norm_contra / self.weights_z[-1]
+        # else:
+        #     energy_diss += (Fzp - Fzm) * diss * norm_contra / self.weights_z[-1]
+        
+        # dsdtp -= 0.5 * energy_diss / (hp * Tp)
+        # dsdtm -= 0.5 * energy_diss / (hm * Tm)
 
         # vorticity terms
         # dudt -= (u3 * dudz - u3 * dwdx)
@@ -468,23 +469,16 @@ class Euler2D():
         if direction == 'z':
             fluxp = up
             fluxm = um
-            num_flux = 0.5 * (fluxp + fluxm)
-            
-            dudtp += u3p * (num_flux - fluxp) / self.weights_z[-1]
-            dudtm += -u3m * (num_flux - fluxm) / self.weights_z[-1]
-
-            dwdtp += -u1p * (num_flux - fluxp) / self.weights_z[-1]
-            dwdtm += u1m * (num_flux - fluxm) / self.weights_z[-1]
         else:
-            fluxp = wp
-            fluxm = wm
-            num_flux = 0.5 * (fluxp + fluxm)
+            fluxp = -wp
+            fluxm = -wm
 
-            dwdtp += u1p * (num_flux - fluxp) / self.weights_z[-1]
-            dwdtm += -u1m * (num_flux - fluxm) / self.weights_z[-1]
-            
-            dudtp += -u3p * (num_flux - fluxp) / self.weights_z[-1]
-            dudtm += u3m * (num_flux - fluxm) / self.weights_z[-1]
+        num_flux = 0.5 * (fluxp + fluxm)
+        dudtp += u3p * (num_flux - fluxp) / self.weights_z[-1]
+        dudtm += -u3m * (num_flux - fluxm) / self.weights_z[-1]
+
+        dwdtp += -u1p * (num_flux - fluxp) / self.weights_z[-1]
+        dwdtm += u1m * (num_flux - fluxm) / self.weights_z[-1]
 
         return 0.0
 
@@ -646,7 +640,14 @@ class Euler2D():
         return ax.contour(x_plot, y_plot, z_plot, vmin=vmin, vmax=vmax, levels=levels, colors='black', linewidths=0.5)
 
     def integrate(self, q):
-        return (self.J * self.weights2D[None, None] * q).sum()
+        out = (self.J * self.weights2D[None, None] * q).sum()
+        out = np.array([out], 'd')
+        out = self.comm.reduce(out, op=MPI.SUM)
+
+        if out is not None:
+            return out[0]
+        else:
+            return None
 
     def ddxi(self, arr):
         return np.einsum('ab,ecbd->ecad', self.D, arr)

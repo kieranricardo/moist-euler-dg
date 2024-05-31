@@ -20,13 +20,13 @@ parser.add_argument('--plot', action='store_true')
 args = parser.parse_args()
 
 run_model = True # whether to run model - set false to just plot previous run
-xlim = 20_000
+xlim = 10_000
 zlim = 10_000
 
 nz = args.n
 nproc = args.nproc
 run_model = (not args.plot)
-nx = 2 * nz
+nx = nz
 eps = 0.8
 g = 9.81
 poly_order = 3
@@ -133,11 +133,10 @@ if run_model:
         if rank == 0:
             print("Simulation time (unit less):", solver.time)
             print("Wall time:", time.time() - t0, '\n')
-
         solver.save(solver.get_filepath(data_dir, exp_name_short))
 
 # plotting
-if rank == 0:
+elif rank == 0:
     plt.rcParams['font.size'] = '12'
 
     solver_plot = TwoPhaseEuler2D(xmap, zmap, poly_order, nx, g=g, cfl=1.0, a=a, nz=nz, upwind=True, nprocx=1)
@@ -173,7 +172,6 @@ if rank == 0:
         for (fig, axs), plot_fun in zip(fig_list, pfunc_list):
             ax = axs[i // 2][i % 2]
             ax.tick_params(labelsize=8)
-            ax.set_xlim(-0.25 * xlim, 0.25 * xlim)
             im = solver_plot.plot_solution(ax, dim=2, plot_func=plot_fun)
             cbar = plt.colorbar(im, ax=ax, format=ticker.FuncFormatter(fmt))
             cbar.ax.tick_params(labelsize=8)

@@ -9,6 +9,7 @@ class TwoPhaseEuler2D(Euler2D):
     def __init__(self, *args, **kwargs):
         Euler2D.__init__(self, *args, **kwargs)
         self.qv = None
+        self.ql = None
 
         # thermodynamic constants
         self.cpd = 1_004.0
@@ -109,12 +110,23 @@ class TwoPhaseEuler2D(Euler2D):
             exit(0)
 
     def get_fluxes(self, u, w, h, s, q, idx=slice(None)):
+        if self.qv is not None:
+            qv_init = self.qv[idx]
+            ql_init = self.ql[idx]
+        else:
+            qv_init = None
+            ql_init = None
+
         vel_norm = self.grad_xi_2[idx] * u ** 2 + 2 * self.grad_xi_dot_zeta[idx] * u * w + self.grad_zeta_2[idx] * w ** 2
-        e, T, p, _, mu = self.get_thermodynamic_quantities(h, s, q)
+        e, T, p, _, mu, qv, ql = self.get_thermodynamic_quantities(h, s, q, qv_init=qv_init, ql_init=ql_init)
         c_sound = np.sqrt(self.gamma * p / h)
         G = 0.5 * vel_norm + e - T * s
         Fx = h * (self.grad_xi_2[idx] * u + self.grad_xi_dot_zeta[idx] * w)
         Fz = h * (self.grad_xi_dot_zeta[idx] * u + self.grad_zeta_2[idx] * w)
+
+        if idx == slice(None):
+            self.qv = qv
+            self.ql = ql
 
         return G, c_sound, T, mu, Fx, Fz
 
@@ -131,13 +143,17 @@ class TwoPhaseEuler2D(Euler2D):
         dhdt -= divF
 
         # velocity evolution
-        vort = (self.ddxi(w) - self.ddzeta(u)) / self.J + self.f
+        dudt -= self.ddxi(G) + self.g * self.u_grav
+        dwdt -= self.ddzeta(G) + self.g * self.w_grav
+        
+        # dudt -= vort * u_perp
+        # dwdt -= vort * w_perp
+        u1, u3 = Fx / h, Fz / h
 
-        u_perp = (-self.drdxi_2 * w + self.dr_xi_dot_zeta * u) / self.J
-        w_perp = (-self.dr_xi_dot_zeta * w + self.drdzeta_2 * u) / self.J
-
-        dudt -= self.ddxi(G) + self.g * self.u_grav + vort * u_perp
-        dwdt -= self.ddzeta(G) + self.g * self.w_grav + vort * w_perp
+        dudz = self.ddzeta(u)
+        dwdx = self.ddxi(w)
+        dudt -= (u3 * dudz - u3 * dwdx)
+        dwdt -= (u1 * dwdx - u1 * dudz)
 
         # handle tracers
         for (dadt, a, b) in [(dsdt, s, T), (dqdt, q, mu)]:
@@ -201,14 +217,14 @@ class TwoPhaseEuler2D(Euler2D):
         Gm, cm, Tm, mum, Fxm, Fzm = self.get_fluxes(um, wm, hm, sm, qm, idx)
 
         if direction == 'z':
-            norm_conrta = self.norm_grad_zeta[idx]
+            norm_contra = self.norm_grad_zeta[idx]
             norm_cov = self.norm_drdxi[idx]
             Fp, Fm = Fzp, Fzm
             dveldtp, dveldtm = dwdtp, dwdtm
             dtan_veldtp, dtan_veldtm = dudtp, dudtm
             tan_velp, tan_velm = up, um
         else:
-            norm_conrta = self.norm_grad_xi[idx]
+            norm_contra = self.norm_grad_xi[idx]
             norm_cov = self.norm_drdzeta[idx]
             Fp, Fm = Fxp, Fxm
             dveldtp, dveldtm = dudtp, dudtm
@@ -220,15 +236,15 @@ class TwoPhaseEuler2D(Euler2D):
         drdxi_2 = self.drdxi_2[idx]
         drdzeta_2 = self.drdzeta_2[idx]
 
-        # normal_vel_p = Fp / (hp * norm_conrta)
-        # normal_vel_m = Fm / (hm * norm_conrta)
-        normal_vel_p = Fp / (0.5 * (hp + hm) * norm_conrta)
-        normal_vel_m = Fm / (0.5 * (hp + hm) * norm_conrta)
+        # normal_vel_p = Fp / (hp * norm_contra)
+        # normal_vel_m = Fm / (hm * norm_contra)
+        normal_vel_p = Fp / (0.5 * (hp + hm) * norm_contra)
+        normal_vel_m = Fm / (0.5 * (hp + hm) * norm_contra)
 
         c_adv = np.abs(0.5 * (normal_vel_p + normal_vel_m))
         c_snd = 0.5 * (cp + cm)
 
-        F_num_flux = 0.5 * (Fp + Fm) - self.ah * (c_adv + c_snd) * (hp - hm) * norm_conrta
+        F_num_flux = 0.5 * (Fp + Fm) - self.ah * (c_adv + c_snd) * (hp - hm) * norm_contra
 
         fluxp = Gp
         fluxm = Gm
@@ -265,40 +281,35 @@ class TwoPhaseEuler2D(Euler2D):
         dveldtm += -diss / self.weights_z[-1]
 
         # dissipation from jump in tangent direction
-        # tang_jump = tan_velp - tan_velm
-        # diss = -self.a * c_adv * tang_jump
+        tang_jump = tan_velp - tan_velm
+        diss = -self.a * (c_adv) * tang_jump
 
-        # dtan_veldtp += diss * norm_cov / (J * self.weights_z[-1])
-        # dtan_veldtm += -diss * norm_cov / (J * self.weights_z[-1])
-
-        # dveldtp += diss * dr_xi_dot_zeta / (J * self.weights_z[-1] * norm_cov)
-        # dveldtm += -diss * dr_xi_dot_zeta / (J * self.weights_z[-1] * norm_cov)
+        # dtan_veldtp += diss * norm_contra / self.weights_z[-1]
+        # dtan_veldtm += -diss * norm_contra / self.weights_z[-1]
 
         # vorticity terms
+        u1p, u1m = Fxp / hp, Fxm / hm
+        u3p, u3m = Fzp / hp, Fzm / hm
         if direction == 'z':
-            fluxp = -up
-            fluxm = -um
+            fluxp = up
+            fluxm = um
         else:
-            fluxp = wp
-            fluxm = wm
-
-        u_perp_p = (-drdxi_2 * wp + dr_xi_dot_zeta * up) / J
-        w_perp_p = (-dr_xi_dot_zeta * wp + drdzeta_2 * up) / J
-        u_perp_m = (-drdxi_2 * wm + dr_xi_dot_zeta * um) / J
-        w_perp_m = (-dr_xi_dot_zeta * wm + drdzeta_2 * um) / J
+            fluxp = -wp
+            fluxm = -wm
 
         num_flux = 0.5 * (fluxp + fluxm)
-        dudtp += u_perp_p * (num_flux - fluxp) / (J * self.weights_z[-1])
-        dudtm += -u_perp_m * (num_flux - fluxm) / (J * self.weights_z[-1])
-        dwdtp += w_perp_p * (num_flux - fluxp) / (J * self.weights_z[-1])
-        dwdtm += -w_perp_m * (num_flux - fluxm) / (J * self.weights_z[-1])
+        dudtp += u3p * (num_flux - fluxp) / self.weights_z[-1]
+        dudtm += -u3m * (num_flux - fluxm) / self.weights_z[-1]
+
+        dwdtp += -u1p * (num_flux - fluxp) / self.weights_z[-1]
+        dwdtm += u1m * (num_flux - fluxm) / self.weights_z[-1]
 
         return 0.0
 
     def energy(self):
         pe = self.h * self.g * self.zs
         ke = 0.5 * self.h * (self.u ** 2 + self.w ** 2)
-        ie = self.h * self.get_thermodynamic_quantities(self.h, self.s, self.q)[3]
+        ie = self.h * self.get_thermodynamic_quantities(self.h, self.s, self.q, qv_init=self.qv, ql_init=self.ql)[3]
         energy = pe + ke + ie
         return self.integrate(energy)
 
@@ -330,11 +341,11 @@ class TwoPhaseEuler2D(Euler2D):
         logpsat = mathlib.log(self.p0) + (1 / self.Rv) * tmp
         return mathlib.exp(logpsat)
 
-    def get_thermodynamic_quantities(self, h, s, qw):
+    def get_thermodynamic_quantities(self, h, s, qw, qv_init=None, ql_init=None):
 
         qd = 1 - qw
 
-        qv = self.solve_qv_from_entropy(h, qw, s, qv=None)
+        qv = self.solve_qv_from_entropy(h, qw, s, qv=qv_init)
 
         qv = np.minimum(qv, qw)
 
@@ -372,12 +383,12 @@ class TwoPhaseEuler2D(Euler2D):
 
         mu = chemical_potential_v - chemical_potential_d
 
-        return enthalpy, T, p, ie, mu
+        return enthalpy, T, p, ie, mu, qv, ql
 
-    def solve_qv_from_entropy(self, density, qw, entropy, iters=10, qv=None, verbose=False, tol=1e-10):
+    def solve_qv_from_entropy(self, density, qw, entropy, iters=10, qv=None, verbose=False, tol=1e-8):
 
         if qv is None:
-            qv = 1e-3 + 0 * qw
+            qv = 0.0 + qw
             iters = 40
 
         logdensity = np.log(density)
