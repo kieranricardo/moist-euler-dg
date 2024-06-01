@@ -16,16 +16,14 @@ parser = argparse.ArgumentParser()
 parser.add_argument('--n', type=int, help='Number of cells')
 parser.add_argument('--nproc', type=int, help='Number of procs', default=1)
 parser.add_argument('--plot', action='store_true')
-
 args = parser.parse_args()
 
-run_model = True # whether to run model - set false to just plot previous run
 xlim = 10_000
 zlim = 10_000
 
 nz = args.n
 nproc = args.nproc
-run_model = (not args.plot)
+run_model = (not args.plot) # whether to run model - set false to just plot previous run
 nx = nz
 eps = 0.8
 g = 9.81
@@ -116,7 +114,7 @@ def initial_condition(xs, ys, solver, pert):
 
     return u, v, density, s, qw, qv
 
-tends = np.array([0.0, 400, 800, 1000])
+tends = np.array([400, 800, 1000, 1200])
 a = 0.5
 if run_model:
     solver = TwoPhaseEuler2D(xmap, zmap, poly_order, nx, g=g, cfl=1.0, a=a, nz=nz, upwind=True, nprocx=nproc)

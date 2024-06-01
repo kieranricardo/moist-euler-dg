@@ -120,7 +120,7 @@ class TwoPhaseEuler2D(Euler2D):
         vel_norm = self.grad_xi_2[idx] * u ** 2 + 2 * self.grad_xi_dot_zeta[idx] * u * w + self.grad_zeta_2[idx] * w ** 2
         e, T, p, _, mu, qv, ql = self.get_thermodynamic_quantities(h, s, q, qv_init=qv_init, ql_init=ql_init)
         c_sound = np.sqrt(self.gamma * p / h)
-        G = 0.5 * vel_norm + e - T * s
+        G = 0.5 * vel_norm + e - T * s - mu * q
         Fx = h * (self.grad_xi_2[idx] * u + self.grad_xi_dot_zeta[idx] * w)
         Fz = h * (self.grad_xi_dot_zeta[idx] * u + self.grad_zeta_2[idx] * w)
 
@@ -309,7 +309,7 @@ class TwoPhaseEuler2D(Euler2D):
     def energy(self):
         pe = self.h * self.g * self.zs
         ke = 0.5 * self.h * (self.u ** 2 + self.w ** 2)
-        ie = self.h * self.get_thermodynamic_quantities(self.h, self.s, self.q, qv_init=self.qv, ql_init=self.ql)[3]
+        ie = self.get_thermodynamic_quantities(self.h, self.s, self.q, qv_init=self.qv, ql_init=self.ql)[3]
         energy = pe + ke + ie
         return self.integrate(energy)
 
