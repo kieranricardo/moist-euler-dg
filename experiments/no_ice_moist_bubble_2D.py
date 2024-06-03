@@ -98,7 +98,7 @@ def initial_condition(xs, ys, solver, ice_solver, pert):
 
 run_time = 600
 
-tends = np.array([0.0, 200.0, 400.0, 600.0]) / 2
+tends = np.array([0.0, 200.0, 400.0, 600.0])
 
 conservation_data_fp = os.path.join(data_dir, 'conservation_data.npy')
 time_list = []
