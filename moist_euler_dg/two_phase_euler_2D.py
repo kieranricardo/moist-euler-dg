@@ -176,14 +176,22 @@ class TwoPhaseEuler2D(Euler2D):
         ip = self.ip_vert_ext
         dhdt[ip] += (0.0 - Fz[ip]) / self.weights_z[-1]
         normal_vel = Fz[ip] / (self.norm_grad_zeta[ip] * h[ip])
-        dwdt[ip] += -2 * self.a * (c_sound[ip] + np.abs(normal_vel)) * normal_vel / self.weights_z[-1]
+        diss = -2 * self.a * (c_sound[ip] + np.abs(normal_vel)) * normal_vel
+        dwdt[ip] += diss / self.weights_z[-1]
+
+        # energy_diss = Fz[ip] * diss / self.weights_z[-1]
+        # dsdt[ip] -= energy_diss / (h[ip] * T[ip])
 
         # top wall BCs
         if self.top_bc == 'wall':
             im = self.im_vert_ext
             dhdt[im] += -(0.0 - Fz[im]) / self.weights_z[-1]
             normal_vel = Fz[im] / (self.norm_grad_zeta[im] * h[im])
-            dwdt[im] += -2 * self.a * (c_sound[im] + np.abs(normal_vel)) * normal_vel / self.weights_z[-1]
+            diss = -2 * self.a * (c_sound[im] + np.abs(normal_vel)) * normal_vel
+            dwdt[im] += diss / self.weights_z[-1]
+
+            # energy_diss = Fz[im] * diss / self.weights_z[-1]
+            # dsdt[im] -= energy_diss / (h[im] * T[im])
         else:
             raise NotImplementedError
 
@@ -279,13 +287,23 @@ class TwoPhaseEuler2D(Euler2D):
 
         dveldtp += diss / self.weights_z[-1]
         dveldtm += -diss / self.weights_z[-1]
+        
+        # energy_diss = (Fp - Fm) * diss / self.weights_z[-1]
 
         # dissipation from jump in tangent direction
-        tang_jump = tan_velp - tan_velm
+        tang_jump = (hp * tan_velp - hm * tan_velm) / (0.5 * (hp + hm))
         diss = -self.a * (c_adv) * tang_jump
 
-        # dtan_veldtp += diss * norm_contra / self.weights_z[-1]
-        # dtan_veldtm += -diss * norm_contra / self.weights_z[-1]
+        dtan_veldtp += diss * norm_contra / self.weights_z[-1]
+        dtan_veldtm += -diss * norm_contra / self.weights_z[-1]
+
+        # if direction == 'z':
+        #     energy_diss += (Fxp - Fxm) * diss * norm_contra / self.weights_z[-1]
+        # else:
+        #     energy_diss += (Fzp - Fzm) * diss * norm_contra / self.weights_z[-1]
+
+        # dsdtp -= 0.5 * energy_diss / (hp * Tp)
+        # dsdtm -= 0.5 * energy_diss / (hm * Tm)
 
         # vorticity terms
         u1p, u1m = Fxp / hp, Fxm / hm

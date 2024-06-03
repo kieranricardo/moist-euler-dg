@@ -28,7 +28,7 @@ nx = nz
 eps = 0.8
 g = 9.81
 poly_order = 3
-a = 0.5
+a = 0.0
 upwind = True
 
 exp_name_short = 'ice-bubble'
@@ -93,7 +93,7 @@ def initial_condition(xs, ys, solver, pert):
 
 run_time = 600
 
-tends = np.array([0.0, 200.0, 400.0, 600.0])
+tends = np.array([0.0, 200.0, 400.0, 600.0]) / 2
 
 conservation_data_fp = os.path.join(data_dir, 'conservation_data.npy')
 time_list = []
@@ -102,7 +102,7 @@ entropy_list = []
 water_var_list = []
 
 if run_model:
-    solver = ThreePhaseEuler2D(xmap, zmap, poly_order, nx, g=g, cfl=1.0, a=a, nz=nz, upwind=upwind, nprocx=nproc)
+    solver = ThreePhaseEuler2D(xmap, zmap, poly_order, nx, g=g, cfl=1.0, a=0.0, nz=nz, upwind=upwind, nprocx=nproc)
     u, v, density, s, qw, qv, ql, qi = initial_condition(solver.xs, solver.zs, solver, pert=2.0)
     solver.set_initial_condition(u, v, density, s, qw)
     for i, tend in enumerate(tends):
@@ -131,13 +131,16 @@ if run_model:
         conservation_data[3, :] = np.array(water_var_list)
         np.save(conservation_data_fp, conservation_data)
 
+        print('Energy error:', (energy_list[-1] - energy_list[0]) / energy_list[0])
+        
+
 # plotting
 elif rank == 0:
     plt.rcParams['font.size'] = '12'
 
     conservation_data = np.load(conservation_data_fp)
     time_list = conservation_data[0, :]
-    mask = time_list <= 200
+    mask = time_list <= 600
     energy_list = conservation_data[1, :][mask]
     entropy_list = conservation_data[2, :][mask]
     water_var_list = conservation_data[3, :][mask]

@@ -72,10 +72,12 @@ class ThreePhaseEuler2D(TwoPhaseEuler2D):
 
         qd = 1 - qw
         if qv_init is not None:
+            qv_init = np.copy(qv_init)
+            ql_init = np.copy(ql_init)
             qi_init = qw - qv_init - ql_init
         else:
             qi_init = None
-        qv, ql, qi = self.solve_fractions_from_entropy(density, qw, entropy, mathlib=np, qv=qv_init, ql=ql_init, qi=qi_init)
+        qv, ql, qi = self.solve_fractions_from_entropy(density, qw, entropy, mathlib=np, qv=None, ql=None, qi=None)
 
         R = qv * self.Rv + qd * self.Rd
         cv = qd * self.cvd + qv * self.cvv + ql * self.cl + qi * self.ci

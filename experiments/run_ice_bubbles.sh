@@ -13,12 +13,12 @@ module use /g/data/hh5/public/modules
 module load conda/analysis3
 module load openmpi
 
-export nz=8
+export nz=16
 # export np=$(( 2*$nz ))
 export np=$(( $nz / 2))
 
 mpirun -n $np python3 ice_moist_bubble_2D.py --n $nz --nproc $np
 python3 ice_moist_bubble_2D.py --n $nz --nproc $np --plot
 
-mpirun -n $np python3 no_ice_moist_bubble_2D.py --n $nz --nproc $np
-python3 no_ice_moist_bubble_2D.py --n $nz --nproc $np --plot
+# mpirun -n $np python3 no_ice_moist_bubble_2D.py --n $nz --nproc $np
+# python3 no_ice_moist_bubble_2D.py --n $nz --nproc $np --plot
