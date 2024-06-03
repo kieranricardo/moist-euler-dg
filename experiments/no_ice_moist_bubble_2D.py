@@ -29,7 +29,7 @@ nx = nz
 eps = 0.8
 g = 9.81
 poly_order = 3
-a = 0.5
+a = 0.0
 upwind = True
 
 exp_name_short = 'no-ice-bubble'
@@ -98,7 +98,7 @@ def initial_condition(xs, ys, solver, ice_solver, pert):
 
 run_time = 600
 
-tends = np.array([0.0, 200.0, 400.0, 600.0])
+tends = np.array([0.0, 200.0, 400.0, 600.0]) / 2
 
 conservation_data_fp = os.path.join(data_dir, 'conservation_data.npy')
 time_list = []

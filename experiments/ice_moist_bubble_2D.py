@@ -102,7 +102,7 @@ entropy_list = []
 water_var_list = []
 
 if run_model:
-    solver = ThreePhaseEuler2D(xmap, zmap, poly_order, nx, g=g, cfl=1.0, a=0.0, nz=nz, upwind=upwind, nprocx=nproc)
+    solver = ThreePhaseEuler2D(xmap, zmap, poly_order, nx, g=g, cfl=1.0, a=a, nz=nz, upwind=upwind, nprocx=nproc)
     u, v, density, s, qw, qv, ql, qi = initial_condition(solver.xs, solver.zs, solver, pert=2.0)
     solver.set_initial_condition(u, v, density, s, qw)
     for i, tend in enumerate(tends):
@@ -145,6 +145,9 @@ elif rank == 0:
     entropy_list = conservation_data[2, :][mask]
     water_var_list = conservation_data[3, :][mask]
     time_list = time_list[mask]
+
+    e_diff = abs(np.diff(energy_list))
+    print('Time max energy growth:', time_list[np.argmax(e_diff) + 1])
     
     energy_list = (energy_list - energy_list[0]) / energy_list[0]
     entropy_list = (entropy_list - entropy_list[0]) / entropy_list[0]
