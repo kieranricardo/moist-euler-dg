@@ -206,7 +206,7 @@ class ThreePhaseEuler2D(TwoPhaseEuler2D):
         is_solved = all_vapour + triple
         assert is_solved.max() <= 1.0
 
-        has_liquid = (ql >= 0) * 1.0
+        has_liquid = (ql > 0) * 0.0
 
         def _newton_loop(density, qw, entropy, logdensity, is_solved, has_liquid, qd, qv, ql, qi):
             for _ in range(iters):
@@ -320,11 +320,11 @@ class ThreePhaseEuler2D(TwoPhaseEuler2D):
         is_solved = is_solved + (1 - is_solved) * (T < self.T0) * (1 - has_liquid)
         assert is_solved.max() <= 1.0
 
-        if is_solved.min() == 0.0:
-            if verbose:
-                print('Running loop 2')
-            has_liquid = 1 - has_liquid
-            qv, qi, ql = _newton_loop(density, qw, entropy, logdensity, is_solved, has_liquid, qd, qw, 0.0 * qw, 0.0 * qw)
+        # if is_solved.min() == 0.0:
+        #     if verbose:
+        #         print('Running loop 2')
+        #     has_liquid = 1 - has_liquid
+        #     qv, qi, ql = _newton_loop(density, qw, entropy, logdensity, is_solved, has_liquid, qd, qw, 0.0 * qw, 0.0 * qw)
 
 
         # TODO: faster way to solve for single phase
