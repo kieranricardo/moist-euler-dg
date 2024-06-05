@@ -304,21 +304,32 @@ class ThreePhaseEuler2D(TwoPhaseEuler2D):
             if rel_update >= tol:
                 print('Warning convergence not achieved')
 
-            return qv, qi, ql
+            R = qv * self.Rv + qd * self.Rd
+            cv = qd * self.cvd + qv * self.cvv + ql * self.cl + qi * self.ci
+            logqv = mathlib.log(qv)
+            cvlogT = entropy + R * logdensity + qd * self.Rd * mathlib.log(self.Rd * qd) + qv * self.Rv * logqv
+            cvlogT += -qv * self.c0 - ql * self.c1 - qi * self.c2
+            logT = (1 / cv) * cvlogT
+            T = mathlib.exp(logT)
 
-        qv, qi, ql = _newton_loop(density, qw, entropy, logdensity, is_solved, has_liquid, qd, qv, ql, qi)
+            ie = cv * T + qv * self.Ls0 + ql * self.Lf0
 
-        R = qv * self.Rv + qd * self.Rd
-        cv = qd * self.cvd + qv * self.cvv + ql * self.cl + qi * self.ci
-        logqv = mathlib.log(qv)
-        cvlogT = entropy + R * logdensity + qd * self.Rd * mathlib.log(self.Rd * qd) + qv * self.Rv * logqv
-        cvlogT += -qv * self.c0 - ql * self.c1 - qi * self.c2
-        logT = (1 / cv) * cvlogT
-        T = mathlib.exp(logT)
+            return qv, qi, ql, ie
 
-        is_solved = is_solved + (1 - is_solved) * (T > self.T0) * has_liquid
-        is_solved = is_solved + (1 - is_solved) * (T < self.T0) * (1 - has_liquid)
-        assert is_solved.max() <= 1.0
+        has_liquid = 0.0
+        qv1, qi1, ql1, ie1 = _newton_loop(density, qw, entropy, logdensity, is_solved, has_liquid, qd, qv, ql, qi)
+        has_liquid = 1.0
+        qv2, qi2, ql2, ie2 = _newton_loop(density, qw, entropy, logdensity, is_solved, has_liquid, qd, qv, ql, qi)
+
+        mask = (ie1 < ie2)
+
+        qv = mask * qv1 + (1.0 - mask) * qv2
+        ql = mask * ql1 + (1.0 - mask) * ql2
+        qi = mask * qi1 + (1.0 - mask) * qi2
+
+        # is_solved = is_solved + (1 - is_solved) * (T > self.T0) * has_liquid
+        # is_solved = is_solved + (1 - is_solved) * (T < self.T0) * (1 - has_liquid)
+        # assert is_solved.max() <= 1.0
 
         # if is_solved.min() == 0.0:
         #     if verbose:

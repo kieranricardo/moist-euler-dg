@@ -60,6 +60,7 @@ dEdq = h * mu
 dEdt = dEdu * dudt + dEdw * dwdt + dEdh * dhdt + dEds * dsdt + dEdq * dqdt
 dEdt = solver_plot.integrate(dEdt)
 
+print('Max temperature:', T.max())
 #-54702223.40350479
 dt = solver_plot.get_dt()
 print('Estimated energy change:', dEdt * dt / E_start)
