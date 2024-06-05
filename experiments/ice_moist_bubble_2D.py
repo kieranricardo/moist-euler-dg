@@ -140,7 +140,7 @@ elif rank == 0:
 
     conservation_data = np.load(conservation_data_fp)
     time_list = conservation_data[0, :]
-    mask = time_list <= 600
+    mask = time_list <= 500
     energy_list = conservation_data[1, :][mask]
     entropy_list = conservation_data[2, :][mask]
     water_var_list = conservation_data[3, :][mask]

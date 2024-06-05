@@ -150,9 +150,11 @@ elif rank == 0:
     # conservation plots
     conservation_data = np.load(conservation_data_fp)
     time_list = conservation_data[0, :]
-    energy_list = conservation_data[1, :]
-    entropy_list = conservation_data[2, :]
-    water_var_list = conservation_data[3, :]
+    mask = time_list <= 500
+    energy_list = conservation_data[1, :][mask]
+    entropy_list = conservation_data[2, :][mask]
+    water_var_list = conservation_data[3, :][mask]
+    time_list = time_list[mask]
     
     energy_list = (energy_list - energy_list[0]) / energy_list[0]
     entropy_list = (entropy_list - entropy_list[0]) / entropy_list[0]
