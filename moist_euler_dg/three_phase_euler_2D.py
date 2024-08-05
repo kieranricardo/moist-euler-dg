@@ -75,16 +75,17 @@ class ThreePhaseEuler2D(TwoPhaseEuler2D):
     def gibbs_ice(self, T, np=np):
         return -self.ci * T * np.log(T / self.T0)
 
-    def get_thermodynamic_quantities(self, density, entropy, qw, qv_init=None, ql_init=None, update_cache=False):
+    def get_thermodynamic_quantities(self, density, entropy, qw, update_cache=False, use_cache=False):
 
         qd = 1 - qw
-        if qv_init is not None:
-            qv_init = np.copy(qv_init)
-            ql_init = np.copy(ql_init)
-            qi_init = qw - qv_init - ql_init
+
+        if use_cache:
+            qv, ql, qi = self.qv, self.ql, self.qi
         else:
-            qi_init = None
-        qv, ql, qi = self.solve_fractions_from_entropy(density, qw, entropy, np=np, qv=None, ql=None, qi=None)
+            qv, ql, qi = np.zeros_like(density), np.zeros_like(density), np.zeros_like(density)
+            qv[:] = qw
+
+        self.solve_fractions_from_entropy(density, qw, entropy, qv=qv, ql=ql, qi=qi)
 
         R = qv * self.Rv + qd * self.Rd
         cv = qd * self.cvd + qv * self.cvv + ql * self.cl + qi * self.ci
@@ -135,7 +136,6 @@ class ThreePhaseEuler2D(TwoPhaseEuler2D):
             self.qv[:] = qv
             self.ql[:] = ql
             self.qi[:] = qi
-            self.T[:] = T
 
         return enthalpy, T, p, ie, mu, qv, ql
 
@@ -161,7 +161,12 @@ class ThreePhaseEuler2D(TwoPhaseEuler2D):
         logqsat /= (self.Rv * T)
         return (self.rho0 / density) * np.exp(logqsat)
 
-    def solve_fractions_from_entropy(self, density, qw, entropy, np=np, iters=10, qv=None, ql=None, qi=None, verbose=False, tol=1e-10):
+    def solve_fractions_from_entropy(self, density, qw, entropy, qv=None, ql=None, qi=None, iters=10, tol=1e-10):
+
+        if qv is None:
+            qv = np.copy(qw)
+            ql = np.zeros_like(qw)
+            qi = np.zeros_like(qw)
 
         logdensity = np.log(density)
         qd = 1 - qw
@@ -205,18 +210,13 @@ class ThreePhaseEuler2D(TwoPhaseEuler2D):
         gv = self.gibbs_vapour(T, qw, density, np=np)
         all_vapour = (gv < self.gibbs_liquid(T, np=np)) * (gv < self.gibbs_ice(T, np=np)) * 1.0
 
-        if (qv is None) or (qi is None):
-            qv = qw
-            qi = 0.0 * qw
-            iters = 10
+        qv[:] = (1 - triple) * qv + triple * qv_
+        qi[:] = (1 - triple) * qi + triple * qi_
 
-        qv = (1 - triple) * qv + triple * qv_
-        qi = (1 - triple) * qi + triple * qi_
+        qv[:] = (1 - all_vapour) * qv + all_vapour * qw
+        qi[:] = (1 - all_vapour) * qi
 
-        qv = (1 - all_vapour) * qv + all_vapour * qw
-        qi = (1 - all_vapour) * qi
-
-        ql = qw - (qv + qi)
+        ql[:] = qw - (qv + qi)
 
         is_solved = all_vapour + triple
         assert is_solved.max() <= 1.0
@@ -338,34 +338,8 @@ class ThreePhaseEuler2D(TwoPhaseEuler2D):
 
         mask = (ie1 < ie2)
 
-        qv = mask * qv1 + (1.0 - mask) * qv2
-        ql = mask * ql1 + (1.0 - mask) * ql2
-        qi = mask * qi1 + (1.0 - mask) * qi2
-
-        # is_solved = is_solved + (1 - is_solved) * (T > self.T0) * has_liquid
-        # is_solved = is_solved + (1 - is_solved) * (T < self.T0) * (1 - has_liquid)
-        # assert is_solved.max() <= 1.0
-
-        # if is_solved.min() == 0.0:
-        #     if verbose:
-        #         print('Running loop 2')
-        #     has_liquid = 1 - has_liquid
-        #     qv, qi, ql = _newton_loop(density, qw, entropy, logdensity, is_solved, has_liquid, qd, qw, 0.0 * qw, 0.0 * qw)
-
-
-        # TODO: faster way to solve for single phase
-
-
-        # if verbose:
-        #     print('T:', T)
-        #     print('Rel update:', rel_update)
-        #     print('qv:', qv)
-        #     print('ql:', ql)
-        #     print('qi:', qi)
-        #     print(f'Gibbs error 1: {(gibbs_v - gibbs_l)}')
-        #     print(f'Gibbs error 2: {(gibbs_v - gibbs_i)}')
-        #     print(f'Gibbs v: {gibbs_v}')
-        #     print('T:', T)
-        #     print('rel update:', rel_update, '\n')
+        qv[:] = mask * qv1 + (1.0 - mask) * qv2
+        ql[:] = mask * ql1 + (1.0 - mask) * ql2
+        qi[:] = mask * qi1 + (1.0 - mask) * qi2
 
         return qv, ql, qi

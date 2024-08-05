@@ -8,9 +8,6 @@ import argparse
 from mpi4py import MPI
 import matplotlib.ticker as ticker
 
-# TODO:
-# get thermo solver to converge at the same time
-
 comm = MPI.COMM_WORLD
 rank = comm.Get_rank()
 size = comm.Get_size()
@@ -21,7 +18,7 @@ parser.add_argument('--nz', type=int, help='Number of cells in vertical')
 parser.add_argument('--nproc', type=int, help='Number of procs', default=1)
 parser.add_argument('--plot', action='store_true')
 args = parser.parse_args()
-
+#-6.80467525352385e-05
 # domain size
 xlim = 50_000
 zlim = 10_000
@@ -92,7 +89,7 @@ def initial_condition(xs, ys, solver, pert):
     s = qd * solver.entropy_air(T, qd, density)
     s += qw * solver.entropy_vapour(T, qw, density)
 
-    qv, ql, qi = solver.solve_fractions_from_entropy(density, qw, s, verbose=True)
+    qv, ql, qi = solver.solve_fractions_from_entropy(density, qw, s)
 
     return u, v, density, s, qw, qv, ql, qi
 

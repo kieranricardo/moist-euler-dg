@@ -36,11 +36,11 @@ class TwoPhaseEuler2D(Euler2D):
 
     def set_initial_condition(self, *vars_in):
         Euler2D.set_initial_condition(self, *vars_in)
-        self.set_thermo_vars(self.state)
+        self.set_thermo_vars(self.state, use_cache=False) # don't use cached moisture fractions - they don't exist yet!
 
-    def set_thermo_vars(self, state):
+    def set_thermo_vars(self, state, use_cache=True):
         u, w, h, s, qw, T, mu, p, ie = self.get_vars(state)
-        enthalpy_, T_, p_, ie_, mu_, qv_, ql_ = self.get_thermodynamic_quantities(h, s, qw)
+        enthalpy_, T_, p_, ie_, mu_, qv_, ql_ = self.get_thermodynamic_quantities(h, s, qw, update_cache=True, use_cache=use_cache)
         T[:] = T_
         mu[:] = mu_
         p[:] = p_
@@ -336,8 +336,7 @@ class TwoPhaseEuler2D(Euler2D):
     def energy(self):
         pe = self.h * self.g * self.zs
         ke = 0.5 * self.h * (self.u ** 2 + self.w ** 2)
-        ie = self.get_thermodynamic_quantities(self.h, self.s, self.q, qv_init=self.qv, ql_init=self.ql)[3]
-        energy = pe + ke + ie
+        energy = pe + ke + self.ie
         return self.integrate(energy)
 
     @property
@@ -347,6 +346,22 @@ class TwoPhaseEuler2D(Euler2D):
     @property
     def hq(self):
         return self.q * self.h
+
+    @property
+    def T(self):
+        return self.get_vars(self.state)[5]
+
+    @property
+    def mu(self):
+        return self.get_vars(self.state)[6]
+
+    @property
+    def p(self):
+        return self.get_vars(self.state)[7]
+
+    @property
+    def ie(self):
+        return self.get_vars(self.state)[8]
 
     def entropy_vapour(self, T, qv, density, mathlib=np):
         return self.cvv * mathlib.log(T) - self.Rv * mathlib.log(qv * self.Rv) - self.Rv * mathlib.log(density) + self.c0
@@ -368,7 +383,7 @@ class TwoPhaseEuler2D(Euler2D):
         logpsat = mathlib.log(self.p0) + (1 / self.Rv) * tmp
         return mathlib.exp(logpsat)
 
-    def get_thermodynamic_quantities(self, h, s, qw, qv_init=None, ql_init=None, update_cache=False):
+    def get_thermodynamic_quantities(self, h, s, qw, update_cache=False, use_cache=False):
 
         qd = 1 - qw
 
