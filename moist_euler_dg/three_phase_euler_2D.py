@@ -4,12 +4,14 @@ from moist_euler_dg.two_phase_euler_2D import TwoPhaseEuler2D
 
 class ThreePhaseEuler2D(TwoPhaseEuler2D):
 
-    nvars = 5
+    nvars = 9
 
     def __init__(self, *args, **kwargs):
         TwoPhaseEuler2D.__init__(self, *args, **kwargs)
-        self.ql = None
-        self.qi = None
+
+        self.qv = np.zeros_like(self.xs)
+        self.ql = np.zeros_like(self.xs)
+        self.qi = np.zeros_like(self.xs)
 
         self.cpd = 1_004.0
         self.Rd = 287.0
@@ -31,6 +33,11 @@ class ThreePhaseEuler2D(TwoPhaseEuler2D):
         self.p0 = self.psat0 = 611.2
         self.rho0 = self.p0 / (self.Rv * self.T0)
 
+        self.logT0 = np.log(self.T0)
+        self.logp0 = np.log(self.p0)
+        self.logRv = np.log(self.Rv)
+        self.logRd = np.log(self.Rd)
+
         Lv0_ = 2.5e6
         Ls0_ = 2.834e6
         Lf0_ = Ls0_ - Lv0_
@@ -43,32 +50,32 @@ class ThreePhaseEuler2D(TwoPhaseEuler2D):
         self.Ls0 = Ls0_ + (self.cpv - self.ci) * self.T0
         self.Lf0 = self.Ls0 - self.Lv0
 
-        self.c0 = self.cpv + (self.Ls0 / self.T0) - self.cvv * np.log(self.T0) + self.Rv * np.log(self.rho0)
-        self.c1 = self.cl + (self.Lf0 / self.T0) - self.cl * np.log(self.T0)
-        self.c2 = self.ci - self.ci * np.log(self.T0)
+        self.c0 = self.cpv + (self.Ls0 / self.T0) - self.cvv * self.logT0 + self.Rv * np.log(self.rho0)
+        self.c1 = self.cl + (self.Lf0 / self.T0) - self.cl * self.logT0
+        self.c2 = self.ci - self.ci * self.logT0
 
-    def entropy_vapour(self, T, qv, density, mathlib=np):
-        return self.cvv * mathlib.log(T) - self.Rv * mathlib.log(qv * density) + self.c0
+    def entropy_vapour(self, T, qv, density, np=np):
+        return self.cvv * np.log(T) - self.Rv * np.log(qv * density) + self.c0
 
-    def entropy_liquid(self, T, mathlib=np):
-        return self.cl * mathlib.log(T) + self.c1
+    def entropy_liquid(self, T, np=np):
+        return self.cl * np.log(T) + self.c1
 
-    def entropy_ice(self, T, mathlib=np):
-        return self.ci * mathlib.log(T) + self.c2
+    def entropy_ice(self, T, np=np):
+        return self.ci * np.log(T) + self.c2
 
-    def entropy_air(self, T, qd, density, mathlib=np):
-        return self.cvd * mathlib.log(T) - self.Rd * mathlib.log(qd * density * self.Rd)
+    def entropy_air(self, T, qd, density, np=np):
+        return self.cvd * np.log(T) - self.Rd * np.log(qd * density * self.Rd)
 
-    def gibbs_vapour(self, T, qv, density, mathlib=np):
-        return -self.cvv * T * mathlib.log(T / self.T0) + self.Rv * T * mathlib.log(qv * density / self.rho0) + self.Ls0 * (1 - T / self.T0)
+    def gibbs_vapour(self, T, qv, density, np=np):
+        return -self.cvv * T * np.log(T / self.T0) + self.Rv * T * np.log(qv * density / self.rho0) + self.Ls0 * (1 - T / self.T0)
 
-    def gibbs_liquid(self, T, mathlib=np):
-        return -self.cl * T * mathlib.log(T / self.T0) + self.Lf0 * (1 - T / self.T0)
+    def gibbs_liquid(self, T, np=np):
+        return -self.cl * T * np.log(T / self.T0) + self.Lf0 * (1 - T / self.T0)
 
-    def gibbs_ice(self, T, mathlib=np):
-        return -self.ci * T * mathlib.log(T / self.T0)
+    def gibbs_ice(self, T, np=np):
+        return -self.ci * T * np.log(T / self.T0)
 
-    def get_thermodynamic_quantities(self, density, entropy, qw, qv_init=None, ql_init=None):
+    def get_thermodynamic_quantities(self, density, entropy, qw, qv_init=None, ql_init=None, update_cache=False):
 
         qd = 1 - qw
         if qv_init is not None:
@@ -77,7 +84,7 @@ class ThreePhaseEuler2D(TwoPhaseEuler2D):
             qi_init = qw - qv_init - ql_init
         else:
             qi_init = None
-        qv, ql, qi = self.solve_fractions_from_entropy(density, qw, entropy, mathlib=np, qv=None, ql=None, qi=None)
+        qv, ql, qi = self.solve_fractions_from_entropy(density, qw, entropy, np=np, qv=None, ql=None, qi=None)
 
         R = qv * self.Rv + qd * self.Rd
         cv = qd * self.cvd + qv * self.cvv + ql * self.cl + qi * self.ci
@@ -86,7 +93,7 @@ class ThreePhaseEuler2D(TwoPhaseEuler2D):
         logqd = np.log(qd)
         logdensity = np.log(density)
 
-        cvlogT = entropy + R * logdensity + qd * self.Rd * (logqd + np.log(self.Rd)) + qv * self.Rv * logqv
+        cvlogT = entropy + R * logdensity + qd * self.Rd * (logqd + self.logRd) + qv * self.Rv * logqv
         cvlogT += -qv * self.c0 - ql * self.c1 - qi * self.c2
         logT = (1 / cv) * cvlogT
         T = np.exp(logT)
@@ -124,9 +131,15 @@ class ThreePhaseEuler2D(TwoPhaseEuler2D):
 
         mu = chemical_potential_v - chemical_potential_d
 
+        if update_cache:
+            self.qv[:] = qv
+            self.ql[:] = ql
+            self.qi[:] = qi
+            self.T[:] = T
+
         return enthalpy, T, p, ie, mu, qv, ql
 
-    def rh_to_qw(self, rh, p, density, mathlib=np):
+    def rh_to_qw(self, rh, p, density, np=np):
 
         R = self.Rd
         for _ in range(100):
@@ -139,18 +152,18 @@ class ThreePhaseEuler2D(TwoPhaseEuler2D):
         # qw = qv # unsaturated
         return qv
 
-    def saturation_fraction(self, T, density, mathlib=np):
-        # -self.cvv * T * mathlib.log(T / self.T0) + self.Rv * T * mathlib.log(qv * density / self.rho0) + self.Ls0 * (1 - T / self.T0)
-        logqsat =  self.cvv * T * mathlib.log(T / self.T0) - self.Ls0 * (1 - T / self.T0)
+    def saturation_fraction(self, T, density, np=np):
+        # -self.cvv * T * np.log(T / self.T0) + self.Rv * T * np.log(qv * density / self.rho0) + self.Ls0 * (1 - T / self.T0)
+        logqsat =  self.cvv * T * np.log(T / self.T0) - self.Ls0 * (1 - T / self.T0)
         logqsat += (T <= self.T0) * self.gibbs_ice(T)
         logqsat += (T > self.T0) * self.gibbs_liquid(T)
 
         logqsat /= (self.Rv * T)
-        return (self.rho0 / density) * mathlib.exp(logqsat)
+        return (self.rho0 / density) * np.exp(logqsat)
 
-    def solve_fractions_from_entropy(self, density, qw, entropy, mathlib=np, iters=20, qv=None, ql=None, qi=None, verbose=False, tol=1e-10):
+    def solve_fractions_from_entropy(self, density, qw, entropy, np=np, iters=10, qv=None, ql=None, qi=None, verbose=False, tol=1e-10):
 
-        logdensity = mathlib.log(density)
+        logdensity = np.log(density)
         qd = 1 - qw
 
         # check for triple point
@@ -179,21 +192,23 @@ class ThreePhaseEuler2D(TwoPhaseEuler2D):
 
         triple = 1.0 * (ql_ >= 0.0) * (qi_ >= 0.0)
 
+        logqw = np.log(qw)
+        logqd = np.log(qd)
+
         # check if all vapour
         R = qw * self.Rv + qd * self.Rd
         cv = qd * self.cvd + qw * self.cvv
-        logqw = mathlib.log(qw)
-        cvlogT = entropy + R * logdensity + qd * self.Rd * mathlib.log(self.Rd * qd) + qw * self.Rv * logqw
+        cvlogT = entropy + R * logdensity + qd * self.Rd * (logqd + self.logRd) + qw * self.Rv * logqw
         cvlogT += -qw * self.c0
         logT = (1 / cv) * cvlogT
-        T = mathlib.exp(logT)
-        gv = self.gibbs_vapour(T, qw, density, mathlib=mathlib)
-        all_vapour = (gv < self.gibbs_liquid(T, mathlib=mathlib)) * (gv < self.gibbs_ice(T, mathlib=mathlib)) * 1.0
+        T = np.exp(logT)
+        gv = self.gibbs_vapour(T, qw, density, np=np)
+        all_vapour = (gv < self.gibbs_liquid(T, np=np)) * (gv < self.gibbs_ice(T, np=np)) * 1.0
 
         if (qv is None) or (qi is None):
             qv = qw
             qi = 0.0 * qw
-            iters = 40
+            iters = 10
 
         qv = (1 - triple) * qv + triple * qv_
         qi = (1 - triple) * qi + triple * qi_
@@ -215,16 +230,16 @@ class ThreePhaseEuler2D(TwoPhaseEuler2D):
                 R = qv * self.Rv + qd * self.Rd
                 cv = qd * self.cvd + qv * self.cvv + ql * self.cl + qi * self.ci
 
-                logqv = mathlib.log(qv)
+                logqv = np.log(qv)
 
-                cvlogT = entropy + R * logdensity + qd * self.Rd * mathlib.log(self.Rd * qd) + qv * self.Rv * logqv
+                cvlogT = entropy + R * logdensity + qd * self.Rd * (logqd + self.logRd) + qv * self.Rv * logqv
                 cvlogT += -qv * self.c0 - ql * self.c1 - qi * self.c2
                 logT = (1 / cv) * cvlogT
 
-                T = mathlib.exp(logT)
+                T = np.exp(logT)
 
                 pv = qv * self.Rv * density * T
-                logpv = logqv + np.log(self.Rv) + logdensity + logT
+                logpv = logqv + self.logRv + logdensity + logT
 
                 # calculate gradients of T and pv w.r.t. moisture concentrations
                 dlogTdqv = (1 / cv) * (self.Rv * logdensity + self.Rv * logqv + self.Rv - self.c0)
@@ -245,13 +260,13 @@ class ThreePhaseEuler2D(TwoPhaseEuler2D):
                 dpvdqi = qv * self.Rv * density * dTdqi
 
                 # calculate Gibbs potentials and gradients w.r.t T and pv
-                gibbs_v = -self.cpv * T * (logT - np.log(self.T0)) + self.Rv * T * (logpv - np.log(self.p0)) + self.Ls0 * (1 - T / self.T0)
-                gibbs_l = -self.cl * T * (logT - np.log(self.T0)) + self.Lf0 * (1 - T / self.T0)
-                gibbs_i = -self.ci * T * (logT - np.log(self.T0))
+                gibbs_v = -self.cpv * T * (logT - self.logT0) + self.Rv * T * (logpv - self.logp0) + self.Ls0 * (1 - T / self.T0)
+                gibbs_l = -self.cl * T * (logT - self.logT0) + self.Lf0 * (1 - T / self.T0)
+                gibbs_i = -self.ci * T * (logT - self.logT0)
 
-                dgibbs_vdT = -self.cpv * (logT - np.log(self.T0)) - self.cpv + self.Rv * (logpv - np.log(self.p0)) - self.Ls0 / self.T0
-                dgibbs_ldT = -self.cl * (logT - np.log(self.T0)) - self.cl - self.Lf0 / self.T0
-                dgibbs_idT = -self.ci * (logT - np.log(self.T0)) - self.ci
+                dgibbs_vdT = -self.cpv * (logT - self.logT0) - self.cpv + self.Rv * (logpv - self.logp0) - self.Ls0 / self.T0
+                dgibbs_ldT = -self.cl * (logT - self.logT0) - self.cl - self.Lf0 / self.T0
+                dgibbs_idT = -self.ci * (logT - self.logT0) - self.ci
 
                 dgibbs_vdpv = self.Rv * T / pv
 
@@ -286,7 +301,7 @@ class ThreePhaseEuler2D(TwoPhaseEuler2D):
 
                 qv = qv + update
 
-                qv = mathlib.maximum(qv, 1e-15 + 0 * qw)
+                qv = np.maximum(qv, 1e-15 + 0 * qw)
 
                 # if triple don't update, if frozen (and not triple) set qi = qw - qv, if thawed set qi = 0
                 qi = is_solved * qi + frozen * (qw - qv)
@@ -297,20 +312,20 @@ class ThreePhaseEuler2D(TwoPhaseEuler2D):
                     break
 
             # could be issue with only vapour -- not converged?
-            qv = mathlib.minimum(qv, qw)
+            qv = np.minimum(qv, qw)
             qi = is_solved * qi + frozen * (qw - qv)
             ql = qw - (qv + qi)
 
-            if rel_update >= tol:
-                print('Warning convergence not achieved')
+            # if rel_update >= tol:
+            #     print('Warning convergence not achieved')
 
             R = qv * self.Rv + qd * self.Rd
             cv = qd * self.cvd + qv * self.cvv + ql * self.cl + qi * self.ci
-            logqv = mathlib.log(qv)
-            cvlogT = entropy + R * logdensity + qd * self.Rd * mathlib.log(self.Rd * qd) + qv * self.Rv * logqv
+            logqv = np.log(qv)
+            cvlogT = entropy + R * logdensity + qd * self.Rd * (logqd + self.logRd) + qv * self.Rv * logqv
             cvlogT += -qv * self.c0 - ql * self.c1 - qi * self.c2
             logT = (1 / cv) * cvlogT
-            T = mathlib.exp(logT)
+            T = np.exp(logT)
 
             ie = cv * T + qv * self.Ls0 + ql * self.Lf0
 

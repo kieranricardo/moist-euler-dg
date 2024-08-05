@@ -4,7 +4,7 @@ from moist_euler_dg.euler_2D import Euler2D
 
 class TwoPhaseEuler2D(Euler2D):
 
-    nvars = 5
+    nvars = 9
 
     def __init__(self, *args, **kwargs):
         Euler2D.__init__(self, *args, **kwargs)
@@ -34,6 +34,18 @@ class TwoPhaseEuler2D(Euler2D):
         self.c0 = self.cpv + (self.Lv0 / self.T0) - self.cpv * np.log(self.T0) + self.Rv * np.log(self.p0)
         self.c1 = self.cl - self.cl * np.log(self.T0)
 
+    def set_initial_condition(self, *vars_in):
+        Euler2D.set_initial_condition(self, *vars_in)
+        self.set_thermo_vars(self.state)
+
+    def set_thermo_vars(self, state):
+        u, w, h, s, qw, T, mu, p, ie = self.get_vars(state)
+        enthalpy_, T_, p_, ie_, mu_, qv_, ql_ = self.get_thermodynamic_quantities(h, s, qw)
+        T[:] = T_
+        mu[:] = mu_
+        p[:] = p_
+        ie[:] = ie_
+
     def time_step(self, dt=None):
 
         if dt is None:
@@ -46,18 +58,22 @@ class TwoPhaseEuler2D(Euler2D):
 
         u_tmp[:] = self.state + 0.5 * dt * k
         self.check_positivity(u_tmp)
+        self.set_thermo_vars(u_tmp)
         self.solve(u_tmp, dstatedt=k)
 
         u_tmp[:] = u_tmp[:] + 0.5 * dt * k
         self.check_positivity(u_tmp)
+        self.set_thermo_vars(u_tmp)
         self.solve(u_tmp, dstatedt=k)
 
         u_tmp[:] = (2 / 3) * self.state + (1 / 3) * u_tmp[:] + (1 / 6) * dt * k
         self.check_positivity(u_tmp)
+        self.set_thermo_vars(u_tmp)
         self.solve(u_tmp, dstatedt=k)
 
         self.state[:] = u_tmp + 0.5 * dt * k
         self.check_positivity(self.state)
+        self.set_thermo_vars(self.state)
 
         self.time += dt
 
@@ -79,7 +95,7 @@ class TwoPhaseEuler2D(Euler2D):
         return out_tnsr, cell_means
 
     def check_positivity(self, state):
-        u, v, h, s, qw = self.get_vars(state)
+        u, v, h, s, qw, *_ = self.get_vars(state)
 
         # h_limited, h_cell_means = self.positivity_preserving_limiter(h)
         # h[:] = h_limited
@@ -109,33 +125,23 @@ class TwoPhaseEuler2D(Euler2D):
             # print("y-coords:", self.ys[state['hqw'] <= 0], "\n")
             exit(0)
 
-    def get_fluxes(self, u, w, h, s, q, idx=slice(None)):
-        if self.qv is not None:
-            qv_init = self.qv[idx]
-            ql_init = self.ql[idx]
-        else:
-            qv_init = None
-            ql_init = None
+    def get_fluxes(self, u, w, h, s, q, T, mu, p, ie, idx=slice(None)):
 
         vel_norm = self.grad_xi_2[idx] * u ** 2 + 2 * self.grad_xi_dot_zeta[idx] * u * w + self.grad_zeta_2[idx] * w ** 2
-        e, T, p, _, mu, qv, ql = self.get_thermodynamic_quantities(h, s, q, qv_init=qv_init, ql_init=ql_init)
+        e = (ie + p) / h
         c_sound = np.sqrt(self.gamma * p / h)
         G = 0.5 * vel_norm + e - T * s - mu * q
         Fx = h * (self.grad_xi_2[idx] * u + self.grad_xi_dot_zeta[idx] * w)
         Fz = h * (self.grad_xi_dot_zeta[idx] * u + self.grad_zeta_2[idx] * w)
 
-        if idx == slice(None):
-            self.qv = qv
-            self.ql = ql
-
-        return G, c_sound, T, mu, Fx, Fz
+        return G, c_sound, Fx, Fz
 
     def _solve(self, state, dstatedt):
 
-        u, w, h, s, q = self.get_vars(state)
-        dudt, dwdt, dhdt, dsdt, dqdt = self.get_vars(dstatedt)
+        u, w, h, s, q, T, mu, p, ie = self.get_vars(state)
+        dudt, dwdt, dhdt, dsdt, dqdt, *_ = self.get_vars(dstatedt)
 
-        G, c_sound, T, mu, Fx, Fz = self.get_fluxes(u, w, h, s, q)
+        G, c_sound, Fx, Fz = self.get_fluxes(u, w, h, s, q, T, mu, p, ie)
 
         # density evolutions
         divF = self.ddxi(self.J * Fx) + self.ddzeta(self.J * Fz)
@@ -210,19 +216,22 @@ class TwoPhaseEuler2D(Euler2D):
             state_m, dstatedt_m = self.get_boundary_data(state, im), self.get_boundary_data(dstatedt, im)
             self.solve_boundaries(state_p, state_m, dstatedt_p, dstatedt_m, 'x', idx=ip)
 
+        if self.forcing is not None:
+            self.forcing(self, state, dstatedt)
+
         return dstatedt
 
     def solve_boundaries(self, state_p, state_m, dstatedt_p, dstatedt_m, direction, idx):
 
-        up, wp, hp, sp, qp = (state_p[i] for i in range(self.nvars))
-        um, wm, hm, sm, qm = (state_m[i] for i in range(self.nvars))
+        up, wp, hp, sp, qp, Tp, mup, pp, iep = (state_p[i] for i in range(self.nvars))
+        um, wm, hm, sm, qm, Tm, mum, pm, iem = (state_m[i] for i in range(self.nvars))
 
-        dudtp, dwdtp, dhdtp, dsdtp, dqdtp = (dstatedt_p[i] for i in range(self.nvars))
-        dudtm, dwdtm, dhdtm, dsdtm, dqdtm = (dstatedt_m[i] for i in range(self.nvars))
+        dudtp, dwdtp, dhdtp, dsdtp, dqdtp, *_ = (dstatedt_p[i] for i in range(self.nvars))
+        dudtm, dwdtm, dhdtm, dsdtm, dqdtm, *_ = (dstatedt_m[i] for i in range(self.nvars))
 
         # calculate fluxes
-        Gp, cp, Tp, mup, Fxp, Fzp = self.get_fluxes(up, wp, hp, sp, qp, idx)
-        Gm, cm, Tm, mum, Fxm, Fzm = self.get_fluxes(um, wm, hm, sm, qm, idx)
+        Gp, cp, Fxp, Fzp = self.get_fluxes(up, wp, hp, sp, qp, Tp, mup, pp, iep, idx)
+        Gm, cm, Fxm, Fzm = self.get_fluxes(um, wm, hm, sm, qm, Tm, mum, pm, iem, idx)
 
         if direction == 'z':
             norm_contra = self.norm_grad_zeta[idx]
@@ -359,11 +368,11 @@ class TwoPhaseEuler2D(Euler2D):
         logpsat = mathlib.log(self.p0) + (1 / self.Rv) * tmp
         return mathlib.exp(logpsat)
 
-    def get_thermodynamic_quantities(self, h, s, qw, qv_init=None, ql_init=None):
+    def get_thermodynamic_quantities(self, h, s, qw, qv_init=None, ql_init=None, update_cache=False):
 
         qd = 1 - qw
 
-        qv = self.solve_qv_from_entropy(h, qw, s, qv=qv_init)
+        qv = self.solve_qv_from_entropy(h, qw, s, qv=None)
 
         qv = np.minimum(qv, qw)
 

@@ -9,7 +9,7 @@ class Euler2D():
 
     nvars = 4
 
-    def __init__(self, xmap, zmap, order, nx, g, cfl=0.5, a=0, nz=None, upwind=True, nprocx=1, top_bc='wall'):
+    def __init__(self, xmap, zmap, order, nx, g, cfl=0.5, a=0, nz=None, upwind=True, nprocx=1, top_bc='wall', forcing=None):
 
         self.order = order
         self.g = g
@@ -22,6 +22,7 @@ class Euler2D():
         self.buoyancy_relax = 1.0
         self.comm = MPI.COMM_WORLD
         self.rank = self.comm.Get_rank()
+        self.forcing = forcing
 
         self.cp = 1_005.0
         self.cv = 718.0
@@ -573,8 +574,7 @@ class Euler2D():
         u, w = vars[0], vars[1]
         u[:] = u_
         w[:] = w_
-
-        for i in range(2, self.nvars):
+        for i in range(2, len(vars_in)):
             vars[i][:] = vars_in[i]
 
     def get_dt(self):
