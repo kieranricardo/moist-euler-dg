@@ -209,15 +209,15 @@ def gLLNodesAndWeights(n, epsilon=1e-15):
                 xi -= dx
                 error = abs(dx)
 
-            x[i] = -xi
-            x[n - i - 1] = xi
+            x[i] = -xi[0]
+            x[n - i - 1] = xi[0]
 
-            w[i] = 2 / (n * (n - 1) * lgP(n - 1, x[i]) ** 2)
+            w[i] = 2 / (n * (n - 1) * lgP(n - 1, x[i])[0] ** 2)
             w[n - i - 1] = w[i]
 
         if n % 2 != 0:
             x[n_2] = 0;
-            w[n_2] = 2.0 / ((n * (n - 1)) * lgP(n - 1, np.array(x[n_2])) ** 2)
+            w[n_2] = 2.0 / ((n * (n - 1)) * lgP(n - 1, np.array(x[n_2]))[0] ** 2)
 
     return x, w
 
@@ -269,91 +269,3 @@ def lgP(n, xi):
             sP = nP
 
         return nP
-
-
-def analyze_conserved_quantities(solver, tend, label, dt=None):
-
-    entropy = [solver.integrate(solver.entropy())]
-    mass = [solver.integrate(solver.h)]
-    enstrophy = [solver.integrate(solver.enstrophy())]
-    vorticity = [solver.integrate(solver.vorticity())]
-
-    # q = solver.q()
-    #
-    # grad_q_norm = [solver.grad_q_norm()]
-    # div_F_norm = [solver.div_F_norm()]
-
-    times = [0]
-
-    while solver.time <= tend:
-        solver.time_step(dt=dt, order=3)
-        entropy.append(solver.integrate(solver.entropy()))
-        mass.append(solver.integrate(solver.h))
-        enstrophy.append(solver.integrate(solver.enstrophy()))
-        vorticity.append(solver.integrate(solver.vorticity()))
-
-        # grad_q_norm.append(solver.grad_q_norm())
-        # div_F_norm.append(solver.div_F_norm())
-
-        times.append(solver.time)
-
-        # q = solver.continuous_q()
-        # q2 = q ** 2
-        # dq2dx = torch.einsum('fgcd,abcd->fgab', q2, self.grad[..., 1])
-        # dq2dy = torch.einsum('fgcd,abcd->fgab', q2, self.grad[..., 0])
-        # int_1 = 2 * solver.integrate(dqdx * q * (u * h) + dqdy * q * (v * h))
-        # int_2 = solver.integrate(dq2dx * (u * h) + dq2dy * (v * h))
-        # chain_rule_error = (int_1 - int_2)
-
-    times = np.array(times)
-    tunit = ''
-    if times.max() >= 3600 * 24:
-        times /= 3600 * 24
-        tunit += ' (days)'
-
-    entropy = np.array(entropy)
-    mass = np.array(mass)
-    enstrophy = np.array(enstrophy)
-    vorticity = np.array(vorticity)
-
-    plt.figure(1, figsize=(7, 7))
-
-    # fig, axs = plt.subplots(2, 2, figsize=(7, 7), sharex=True)
-    plt.suptitle("Conservation errors")
-
-    ax = plt.subplot(2, 2, 1)
-    # ax = axs[0][0]
-    ax.set_ylabel("Energy error (normalized)")
-    # ax.set_xlabel("Time" + tunit)
-    ax.set_xticks([], [])
-    ax.plot(times, (entropy - entropy[0]) / entropy[0], label=label)
-    ax.set_yscale('symlog', linthresh=1e-15)
-    ax.grid(True, which='both')
-
-    ax = plt.subplot(2, 2, 2)
-    # ax = axs[0][1]
-    ax.set_ylabel("Mass error (normalized)")
-    # ax.set_label("Time" + tunit)
-    ax.set_xticks([], [])
-    ax.plot(times, (mass - mass[0]) / mass[0], label=label)
-    ax.set_yscale('symlog', linthresh=1e-16)
-    ax.grid(True, which='both')
-
-    ax = plt.subplot(2, 2, 3)
-    # ax = axs[1][0]
-    ax.set_ylabel("Enstrophy error (normalized)")
-    ax.set_xlabel("Time" + tunit)
-    ax.plot(times, (enstrophy - enstrophy[0]) / enstrophy[0], label=label)
-    ax.set_yscale('symlog', linthresh=1e-15)
-    ax.grid(True, which='both')
-
-    ax = plt.subplot(2, 2, 4)
-    # ax = axs[1][1]
-    plt.ylabel("Vorticity error (normalized)")
-    plt.xlabel("Time" + tunit)
-    plt.plot(times, (vorticity - vorticity[0]) / vorticity[0], label=label)
-    ax.set_yscale('symlog', linthresh=1e-16)
-    ax.grid(True, which='both')
-
-    plt.legend()
-    plt.tight_layout()

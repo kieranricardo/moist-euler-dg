@@ -1,5 +1,6 @@
 from matplotlib import pyplot as plt
 from moist_euler_dg.three_phase_euler_2D import ThreePhaseEuler2D
+from moist_euler_dg.fortran_three_phase_euler_2D import FortranThreePhaseEuler2D
 from moist_euler_dg.euler_2D import Euler2D
 import numpy as np
 import time
@@ -52,21 +53,16 @@ if rank == 0:
 comm.barrier()
 #
 
-def initial_condition(xs, ys, solver, pert):
-    """
-    :param xs:
-    :param ys:
-    :param solver:
-    :param pert:
-    :return:
-    """
+def initial_condition(solver, pert):
 
-    u = 0 * ys
-    v = 0 * ys
+    # initial velocity is zero
+    u = np.zeros_like(solver.zs)
+    v = np.zeros_like(solver.zs)
 
+    # create a hydrostatically balanced pressure and density profile
     dry_theta = 300
     dexdy = -g / (solver.cpd * dry_theta)
-    ex = 1 + dexdy * ys
+    ex = 1 + dexdy * solver.zs
     p = 1_00_000.0 * ex ** (solver.cpd / solver.Rd)
     density = p / (solver.Rd * ex * dry_theta)
 
@@ -79,7 +75,7 @@ def initial_condition(xs, ys, solver, pert):
     assert (qw <= solver.saturation_fraction(T, density)).all()
 
     rad_max = 2_000
-    rad = np.sqrt(xs ** 2 + (ys - 1.0 * rad_max) ** 2)
+    rad = np.sqrt(solver.xs ** 2 + (solver.zs - 1.0 * rad_max) ** 2)
     mask = rad < rad_max
     density -= mask * (pert * density / 300) * (np.cos(np.pi * (rad / rad_max) / 2) ** 2)
 
@@ -120,8 +116,8 @@ time_list = []
 energy_list = []
 
 if run_model:
-    solver = ThreePhaseEuler2D(xmap, zmap, poly_order, nx, g=g, cfl=1.5, a=a, nz=nz, upwind=upwind, nprocx=nproc, forcing=cooling_and_sst_forcing)
-    u, v, density, s, qw, qv, ql, qi = initial_condition(solver.xs, solver.zs, solver, pert=2.0)
+    solver = FortranThreePhaseEuler2D(xmap, zmap, poly_order, nx, g=g, cfl=1.5, a=a, nz=nz, upwind=upwind, nprocx=nproc, forcing=cooling_and_sst_forcing)
+    u, v, density, s, qw, qv, ql, qi = initial_condition(solver, pert=2.0)
     solver.set_initial_condition(u, v, density, s, qw)
 
     E0 = solver.energy()
@@ -151,7 +147,7 @@ elif rank == 0:
     #
     solver_plot = ThreePhaseEuler2D(xmap, zmap, poly_order, nx, g=g, cfl=0.5, a=a, nz=nz, upwind=upwind, nprocx=1)
     # base state of the initial condition (excludes bubble perturbation)
-    _, _, _, s0, qw0, qv0, ql0, qi0 = initial_condition(solver_plot.xs, solver_plot.zs, solver_plot, pert=0.0)
+    _, _, _, s0, qw0, qv0, ql0, qi0 = initial_condition(solver_plot, pert=0.0)
 
     def fmt(x, pos):
         a, b = '{:.2e}'.format(x).split('e')
