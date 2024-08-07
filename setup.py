@@ -6,6 +6,7 @@ site.ENABLE_USER_SITE = True
 
 sources = [
     "./moist_euler_dg/three_phase_thermo.F90",
+    "./moist_euler_dg/moist_euler_dynamics_2D.F90",
 ]
 
 gnu_f90flags = ['-fno-range-check', '-march=native', '-ffast-math', '-fopenmp', '-Wuninitialized']

@@ -5,13 +5,13 @@ implicit none
 contains
 
 subroutine solve_fractions_from_entropy(&
-    qv, ql, qi, ind, density, s, qw, n, &
+    qv, ql, qi, T, mu, ind, density, s, qw, n, &
     Rd, logRd, Rv, logRv, cvd, cvv, cpv, cpd, cl, ci, &
     T0, logT0, p0, logp0, Lf0, Ls0, c0, c1, c2 &
     )
 
     ! arguments
-    real(8), intent(inout) :: qv(:), ql(:), qi(:), ind(:)
+    real(8), intent(inout) :: qv(:), ql(:), qi(:), T(:), mu(:), ind(:)
     real(8), intent(in) :: density(:), s(:), qw(:)
     integer, intent(in) :: n
     real(8), intent(in) :: Rd, logRd, Rv, logRv, cvd, cvv, cpv, cpd, cl, ci
@@ -21,7 +21,7 @@ subroutine solve_fractions_from_entropy(&
     integer :: i
     do i = 1, n
         call solve_fractions_from_entropy_point(&
-            qv(i), ql(i), qi(i), ind(i), density(i), s(i), qw(i), &
+            qv(i), ql(i), qi(i), T(i), mu(i), ind(i), density(i), s(i), qw(i), &
             Rd, logRd, Rv, logRv, cvd, cvv, cpv, cpd, cl, ci, &
             T0, logT0, p0, logp0, Lf0, Ls0, c0, c1, c2 &
         )
@@ -31,13 +31,13 @@ end subroutine solve_fractions_from_entropy
 
 
 subroutine solve_fractions_from_entropy_point(&
-    qv_out, ql_out, qi_out, ind, density, s, qw, &
+    qv_out, ql_out, qi_out, T, mu, ind, density, s, qw, &
     Rd, logRd, Rv, logRv, cvd, cvv, cpv, cpd, cl, ci, &
     T0, logT0, p0, logp0, Lf0, Ls0, c0, c1, c2 &
     )
 
     ! arguments
-    real(8), intent(inout) :: qv_out, ql_out, qi_out, ind
+    real(8), intent(inout) :: qv_out, ql_out, qi_out, T, mu, ind
     real(8), intent(in) :: density, s, qw
     real(8), intent(in) :: Rd, logRd, Rv, logRv, cvd, cvv, cpv, cpd, cl, ci
     real(8), intent(in) :: T0, logT0, p0, logp0, Lf0, Ls0, c0, c1, c2
@@ -45,10 +45,10 @@ subroutine solve_fractions_from_entropy_point(&
     ! local variables
     real(8) :: qv, ql, qi, logqv
     real(8) :: qd, logqd, logdensity, cv, R
-    real(8) :: T, logT, pv, logpv, dlogTdqv, dlogTdql
+    real(8) :: logT, pv, logpv, dlogTdqv, dlogTdql
     real(8) :: dlogTdqi, dTdqv, dTdql, dTdqi
     real(8) :: sa, sv, sc, sl, si, cvlogT
-    real(8) :: gibbs_v, gibbs_l, gibbs_i
+    real(8) :: gibbs_v, gibbs_l, gibbs_i, gibbs_d
 
     integer :: i
 
@@ -75,6 +75,10 @@ subroutine solve_fractions_from_entropy_point(&
         qv_out = qv
         ql_out = ql
         qi_out = qi
+        T = T0
+        gibbs_v = 0.0
+        gibbs_d = cpd * T - T * cvd * logT0 + Rd * T * (logqd + logdensity + logRd)
+        mu = gibbs_v - gibbs_d
         ind = 1.0
         return
     end if
@@ -104,6 +108,9 @@ subroutine solve_fractions_from_entropy_point(&
         qv_out = qv
         ql_out = ql
         qi_out = qi
+        gibbs_v = -cpv * (logT - logT0) - cpv + Rv * (logpv - logp0) - Ls0 / T0
+        gibbs_d = cpd * T - T * cvd * logT + Rd * T * (logqd + logdensity + logRd)
+        mu = gibbs_v - gibbs_d
         ind = 2.0
         return
     end if
@@ -114,7 +121,7 @@ subroutine solve_fractions_from_entropy_point(&
         ql = 0.0
         qi = qw - qv
 
-        call solve_vapour_ice_fractions(qv, qi, ind, density, s, qw, logdensity, logqd, &
+        call solve_vapour_ice_fractions(qv, qi, T, mu, ind, density, s, qw, logdensity, logqd, &
             Rd, logRd, Rv, logRv, cvd, cvv, cpv, cpd, cl, ci, &
             T0, logT0, p0, logp0, Lf0, Ls0, c0, c1, c2)
 
@@ -127,7 +134,7 @@ subroutine solve_fractions_from_entropy_point(&
             qv = qw
             ql = 0.0
             qi = 0.0
-            call solve_vapour_liquid_fractions(qv, ql, ind, density, s, qw, logdensity, logqd, &
+            call solve_vapour_liquid_fractions(qv, ql, T, mu, ind, density, s, qw, logdensity, logqd, &
                 Rd, logRd, Rv, logRv, cvd, cvv, cpv, cpd, cl, ci, &
                 T0, logT0, p0, logp0, Lf0, Ls0, c0, c1, c2)
             if (ind > 0) then
@@ -143,7 +150,7 @@ subroutine solve_fractions_from_entropy_point(&
         ql = qw - qv
         qi = 0.0
 
-        call solve_vapour_liquid_fractions(qv, ql, ind, density, s, qw, logdensity, logqd, &
+        call solve_vapour_liquid_fractions(qv, ql, T, mu, ind, density, s, qw, logdensity, logqd, &
             Rd, logRd, Rv, logRv, cvd, cvv, cpv, cpd, cl, ci, &
             T0, logT0, p0, logp0, Lf0, Ls0, c0, c1, c2)
 
@@ -155,7 +162,7 @@ subroutine solve_fractions_from_entropy_point(&
         else
             qv = qw
             qi = 0.0
-            call solve_vapour_ice_fractions(qv, qi, ind, density, s, qw, logdensity, logqd, &
+            call solve_vapour_ice_fractions(qv, qi, T, mu, ind, density, s, qw, logdensity, logqd, &
                 Rd, logRd, Rv, logRv, cvd, cvv, cpv, cpd, cl, ci, &
                 T0, logT0, p0, logp0, Lf0, Ls0, c0, c1, c2)
             if (ind > 0) then
@@ -170,13 +177,13 @@ end subroutine solve_fractions_from_entropy_point
 
 
 subroutine solve_vapour_liquid_fractions(&
-    qv_out, ql_out, ind, density, s, qw, logdensity, logqd, &
+    qv_out, ql_out, T, mu, ind, density, s, qw, logdensity, logqd, &
     Rd, logRd, Rv, logRv, cvd, cvv, cpv, cpd, cl, ci, &
     T0, logT0, p0, logp0, Lf0, Ls0, c0, c1, c2 &
     )
 
     ! arguments
-    real(8), intent(inout) :: qv_out, ql_out, ind
+    real(8), intent(inout) :: qv_out, ql_out, T, mu, ind
     real(8), intent(in) :: density, s, qw, logdensity, logqd
     real(8), intent(in) :: Rd, logRd, Rv, logRv, cvd, cvv, cpv, cpd, cl, ci
     real(8), intent(in) :: T0, logT0, p0, logp0, Lf0, Ls0, c0, c1, c2
@@ -184,10 +191,10 @@ subroutine solve_vapour_liquid_fractions(&
     ! local variables
     real(8) :: qv, ql, qi, logqv
     real(8) :: qd, cv, R
-    real(8) :: T, logT, pv, logpv, dlogTdqv, dlogTdql
+    real(8) :: logT, pv, logpv, dlogTdqv, dlogTdql
     real(8) :: dlogTdqi, dTdqv, dTdql, dTdqi
     real(8) :: cvlogT
-    real(8) :: gibbs_v, gibbs_l, gibbs_i
+    real(8) :: gibbs_v, gibbs_l, gibbs_i, gibbs_d
     real(8) :: dgibbs_vdqv, dgibbs_vdql, dgibbs_vdqi
     real(8) :: dgibbs_ldqv, dgibbs_ldql, dgibbs_ldqi
     real(8) :: dgibbs_idqv, dgibbs_idql, dgibbs_idqi
@@ -275,6 +282,8 @@ subroutine solve_vapour_liquid_fractions(&
         if ((T > T0) .and. (abs(update) < 1e-10)) then
             qv_out = qv
             ql_out = ql
+            gibbs_d = cpd * T - T * cvd * logT + Rd * T * (logqd + logdensity + logRd)
+            mu = gibbs_v - gibbs_d
             ind = 3.0
             return
         end if
@@ -296,13 +305,13 @@ end subroutine solve_vapour_liquid_fractions
 
 
 subroutine solve_vapour_ice_fractions(&
-    qv_out, qi_out, ind, density, s, qw, logdensity, logqd, &
+    qv_out, qi_out, T, mu, ind, density, s, qw, logdensity, logqd, &
     Rd, logRd, Rv, logRv, cvd, cvv, cpv, cpd, cl, ci, &
     T0, logT0, p0, logp0, Lf0, Ls0, c0, c1, c2 &
     )
 
     ! arguments
-    real(8), intent(inout) :: qv_out, qi_out, ind
+    real(8), intent(inout) :: qv_out, qi_out, T, mu, ind
     real(8), intent(in) :: density, s, qw, logdensity, logqd
     real(8), intent(in) :: Rd, logRd, Rv, logRv, cvd, cvv, cpv, cpd, cl, ci
     real(8), intent(in) :: T0, logT0, p0, logp0, Lf0, Ls0, c0, c1, c2
@@ -310,10 +319,10 @@ subroutine solve_vapour_ice_fractions(&
     ! local variables
     real(8) :: qv, ql, qi, logqv
     real(8) :: qd, cv, R
-    real(8) :: T, logT, pv, logpv, dlogTdqv, dlogTdql
+    real(8) :: logT, pv, logpv, dlogTdqv, dlogTdql
     real(8) :: dlogTdqi, dTdqv, dTdql, dTdqi
     real(8) :: cvlogT
-    real(8) :: gibbs_v, gibbs_l, gibbs_i
+    real(8) :: gibbs_v, gibbs_l, gibbs_i, gibbs_d
     real(8) :: dgibbs_vdqv, dgibbs_vdql, dgibbs_vdqi
     real(8) :: dgibbs_ldqv, dgibbs_ldql, dgibbs_ldqi
     real(8) :: dgibbs_idqv, dgibbs_idql, dgibbs_idqi
@@ -401,6 +410,8 @@ subroutine solve_vapour_ice_fractions(&
         if ((T <= T0) .and. (abs(update) < 1e-10)) then
             qv_out = qv
             qi_out = qi
+            gibbs_d = cpd * T - T * cvd * logT + Rd * T * (logqd + logdensity + logRd)
+            mu = gibbs_v - gibbs_d
             ind = 4.0
             return
         end if

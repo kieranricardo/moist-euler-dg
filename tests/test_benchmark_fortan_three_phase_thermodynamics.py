@@ -1,6 +1,8 @@
 import pytest
 import numpy as np
+from moist_euler_dg.fortran_three_phase_euler_2D import FortranThreePhaseEuler2D
 from moist_euler_dg.three_phase_euler_2D import ThreePhaseEuler2D
+from _moist_euler_dg import three_phase_thermo
 
 
 @pytest.fixture()
@@ -20,7 +22,7 @@ def solver():
     a = 0.5  # kinetic energy dissipation parameter
     upwind = True
 
-    solver_ = ThreePhaseEuler2D(
+    solver_ = FortranThreePhaseEuler2D(
         xmap, zmap, poly_order, nx, g=g, cfl=1.5, a=a, nz=nz, upwind=upwind, nprocx=1
     )
 
@@ -52,37 +54,18 @@ def initial_condition(solver_):
     return u, v, density, s, qw
 
 
-def test_moisture_fraction_solver(solver):
+def test_benchmark_solve(benchmark, solver):
 
-    _, _, h, s, qw, *_= solver.get_vars(solver.state)
-
-    qw = qw * 2
-
-    enthalpy, T, p, ie, mu, qv, ql = solver.get_thermodynamic_quantities(h, s, qw)
-
-    qi = qw - (qv + ql)
-
-    has_liquid = ql > 1e-10
-    has_ice = qi > 1e-10
-
-    assert not (has_liquid & (T < (solver.T0 - 1e-10))).any()
-    assert not (has_ice & (T > (solver.T0 + 1e-10))).any()
-
-    gv = solver.gibbs_vapour(T, qv, h)
-    gl = solver.gibbs_liquid(T)
-    gi = solver.gibbs_ice(T)
-
-    assert np.allclose(qw, qv + ql + qi)
-    assert np.allclose(gv[has_liquid], gl[has_liquid])
-    assert np.allclose(gv[has_ice], gi[has_ice])
-    assert np.allclose(gl[has_ice & has_liquid], gi[has_ice & has_liquid])
-
-    qd = 1 - qw
-    gd = solver.gibbs_air(T, qd, h)
-    assert np.allclose(gv - gd, mu)
+    state = solver.state
+    dstatedt = np.zeros_like(state)
+    benchmark(solver.solve, state, dstatedt)
 
 
+def test_benchmark_solve_fractions_from_entropy(benchmark, solver):
+
+    benchmark(solver.solve_fractions_from_entropy, solver.h, solver.q, solver.s)
 
 
-
+def test_benchmark_get_thermodynamic_quantities(benchmark, solver):
+    benchmark(solver.get_thermodynamic_quantities, solver.h, solver.s, solver.q)
 

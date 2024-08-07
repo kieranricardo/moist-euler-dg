@@ -55,6 +55,8 @@ class ThreePhaseEuler2D(TwoPhaseEuler2D):
         self.c2 = self.ci - self.ci * self.logT0
 
     def entropy_vapour(self, T, qv, density, np=np):
+        # s = cvv * log(T / T0) - Rv * log(h / h0) + cpv + (Ls0 / T0)
+        # c0 = cpv + (Ls0 / T0) - cvv * logT0 + Rv * log(h0)
         return self.cvv * np.log(T) - self.Rv * np.log(qv * density) + self.c0
 
     def entropy_liquid(self, T, np=np):
@@ -67,13 +69,34 @@ class ThreePhaseEuler2D(TwoPhaseEuler2D):
         return self.cvd * np.log(T) - self.Rd * np.log(qd * density * self.Rd)
 
     def gibbs_vapour(self, T, qv, density, np=np):
+        # c0 = self.cpv + (self.Ls0 / self.T0) - self.cvv * self.logT0 + self.Rv * np.log(self.rho0)
+        # s = cvv * log(T / T0) - Rv * log(h / h0) + cpv + (Ls0 / T0)
+        # u = cvv * T + Ls0
+        # p = h * Rv * T
+        # gv = u + (p / h) - s * T
+        # gv = - T * cvv * log(T / T0) + T * Rv * log(h / h0) - Ls0 * (1 - (Ls0 / T0))
         return -self.cvv * T * np.log(T / self.T0) + self.Rv * T * np.log(qv * density / self.rho0) + self.Ls0 * (1 - T / self.T0)
 
     def gibbs_liquid(self, T, np=np):
+        # u = cl * T + Lf0
+        # s = cl * log(T) + c1
+        # u = exp((s - c1) / cl)
+        # gl = u - s  * T
+        # gl = cl * T + Lf0 - T * cl * log(T) - T * (cl + (Lf0 / T0) - cl * logT0)
+        # gl = -T * cl * log(T / T0) + Lf0 * (1 - Lf0 / T0)
         return -self.cl * T * np.log(T / self.T0) + self.Lf0 * (1 - T / self.T0)
 
     def gibbs_ice(self, T, np=np):
         return -self.ci * T * np.log(T / self.T0)
+
+    def gibbs_air(self, T, qd, density):
+        # s = cvd * log(T) - Rd * log(h * Rd)
+        # u = cvd * T
+        # p = h * Rv * T
+        # gd = u + (p / h) - s * T
+        # gd = cpd * T - T * cvd * log(T) + Rd * log(h * Rd)
+        h = qd * density
+        return self.cpd * T - T * self.cvd * np.log(T) + self.Rd * T * np.log(h * self.Rd)
 
     def get_thermodynamic_quantities(self, density, entropy, qw, update_cache=False, use_cache=False):
 

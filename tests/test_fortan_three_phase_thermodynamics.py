@@ -139,5 +139,7 @@ def test_moisture_fraction_solver(solver):
     assert np.allclose(gv[has_ice], gi[has_ice])
     assert np.allclose(gl[has_ice & has_liquid], gi[has_ice & has_liquid])
 
-
+    qd  = 1 - qw
+    gd = solver.gibbs_air(T, qd, h)
+    assert np.allclose(gv - gd, mu)
 
