@@ -93,10 +93,10 @@ class Euler2D():
         self.xs = xmap(self.xis, self.zetas)
         self.zs = zmap(self.xis, self.zetas)
 
-        self.dx = (self.xs.max() - self.xs.min()) / self.nx
-        self.dz = zmap(0, 1) / self.nz
+        self.dx = (abs(self.xs[:, :, 1:] - self.xs[:, :, :1]).min())
+        self.dz = (abs(self.zs[:, :, :, 1:] - self.zs[:, :, :, :-1]).min())
 
-        self.cdt = self.cfl * min(self.dx, self.dz) / (2 * order + 1)
+        self.cdt = self.cfl * min(self.dx, self.dz)
         self.time = 0
 
         self.state = np.zeros(self.nvars * self.xs.size)

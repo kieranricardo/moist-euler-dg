@@ -31,65 +31,6 @@ def solver():
     return solver_
 
 
-# def test_thermo(solver):
-#
-#     dry_theta = 300
-#     dexdy = -solver.g / (solver.cpd * dry_theta)
-#     ex = np.array([1.,]) - 7000 * solver.g / (solver.cpd * dry_theta)
-#     p = 1_00_000.0 * ex ** (solver.cpd / solver.Rd)
-#     density = p / (solver.Rd * ex * dry_theta)
-#
-#     qw = solver.rh_to_qw(0.95, p, density)
-#     qd = 1 - qw
-#     R = solver.Rd * qd + solver.Rv * qw
-#     T = p / (R * density)
-#     entropy = qd * solver.entropy_air(T, qd, density)
-#     entropy += qw * solver.entropy_vapour(T, qw, density)
-#
-#     print('T:', T - solver.T0)
-#
-#     ####
-#     qv, ql, qi = solver.solve_fractions_from_entropy(density, qw, entropy)
-#
-#     print(qv[0], ql[0], qi[0])
-#
-#     ind = np.array([0.0])
-#     qv[:] = qw
-#     ql[:] = 0.0
-#     qi[:] = 0.0
-#     three_phase_thermo.solve_fractions_from_entropy(
-#         qv.ravel(), ql.ravel(), qi.ravel(), ind.ravel(), density.ravel(), entropy.ravel(), qw.ravel(), qv.size,
-#         solver.Rd, solver.logRd, solver.Rv, solver.logRv, solver.cvd, solver.cvv, solver.cpv, solver.cpd, solver.cl, solver.ci,
-#         solver.T0, solver.logT0, solver.p0, solver.logp0, solver.Lf0, solver.Ls0, solver.c0, solver.c1, solver.c2
-#     )
-#
-#     print(qv[0], ql[0], qi[0])
-#     print(ind)
-#
-#     ####
-#     qw *= 2
-#     qv, ql, qi = solver.solve_fractions_from_entropy(density, qw, entropy)
-#
-#     print(qv[0], ql[0], qi[0])
-#
-#     ind = np.array([0.0])
-#     qv[:] = qw
-#     ql[:] = 0.0
-#     qi[:] = 0.0
-#     three_phase_thermo.solve_fractions_from_entropy(
-#         qv.ravel(), ql.ravel(), qi.ravel(), ind.ravel(), density.ravel(), entropy.ravel(), qw.ravel(), qv.size,
-#         solver.Rd, solver.logRd, solver.Rv, solver.logRv, solver.cvd, solver.cvv, solver.cpv, solver.cpd, solver.cl, solver.ci,
-#         solver.T0, solver.logT0, solver.p0, solver.logp0, solver.Lf0, solver.Ls0, solver.c0, solver.c1, solver.c2
-#     )
-#
-#     print(qv[0], ql[0], qi[0])
-#     print(ind)
-#
-#
-#     assert False
-
-
-
 def initial_condition(solver_):
     # initial velocity is zero
     u = np.zeros_like(solver_.zs)

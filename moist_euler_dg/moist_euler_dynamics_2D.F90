@@ -230,103 +230,103 @@ subroutine solve_column(&
 end subroutine
 
 
-!subroutine solve_horz_boundaries(&
-!    u, w, h, s, &
-!    u_bdry_m, w_bdry_m, h_bdry_m, s_bdry_m, &
-!    u_bdry_p, w_bdry_p, h_bdry_p, s_bdry_p, &
-!    dudt, dwdt, dhdt, dsdt, p, &
-!    D, wz, Ja, &
-!    grad_xi_2, grad_xi_dot_zeta, grad_zeta_2, &
-!    nx, nz, n, &
-!    a, upwind_flag, gamma &
-!)
-!    real(8), intent(in) :: u(:), w(:), h(:), s(:)
-!    real(8), intent(in) :: u_bdry_m(:), w_bdry_m(:), h_bdry_m(:), s_bdry_m(:)
-!    real(8), intent(in) :: u_bdry_p(:), w_bdry_p(:), h_bdry_p(:), s_bdry_p(:)
-!    real(8), intent(inout) :: dudt(:), dwdt(:), dhdt(:), dsdt(:), p(:)
-!    real(8), intent(in) :: D(:, :), wz, Ja(:)
-!    real(8), intent(in) :: grad_xi_2(:), grad_xi_dot_zeta(:), grad_zeta_2(:)
-!    integer :: nx, nz, n
-!    real(8) :: a, upwind_flag, gamma
-!
-!    real(8) :: Gp, Gm, Tp, Tm, Fxp, Fxm, Fzp, Fzm, norm_grad_contra, dummy
-!    integer :: i, j, k, idx, stride, ip, im, ib
-!
-!    stride = nz * n * n
-!
-!    i = 1
-!    do j=1,nz
-!    do k=1,n
-!        im = (j - 1) * n + k
-!        ip = (j - 1) * n * n + k
-!        ib = ip
-!
-!        call get_fluxes(&
-!            u(ip), w(ip), h(ip), s(ip), q(ip), T(ip), mu(ip), p(ip), ie(ip), &
-!            grad_xi_2(ib), grad_xi_dot_zeta(ib), grad_zeta_2(ib), &
-!            gamma, Gp, Fxp, Fzp &
-!        )
-!
-!        call get_fluxes(&
-!            u(im), w(im), h(im), s(im), q(im), T(im), mu(im), p(im), ie(im), &
-!            grad_xi_2(ib), grad_xi_dot_zeta(ib), grad_zeta_2(ib), &
-!            gamma, Gm, Fxm, Fzm &
-!        )
-!
-!        norm_grad_contra = sqrt(grad_xi_2(ib))
-!
-!        call boundary_fluxes(&
-!            dudt(ip), dwdt(ip), &
-!            dhdt(ip), dsdt(ip), dqdt(ip), &
-!            u(ip), w(ip), h(ip), s(ip), q(ip), T(ip), mu(ip), p(ip), ie(ip), &
-!            Gp, Fxp, Fzp, &
-!            dummy, dummy, &
-!            dummy, dummy, dummy, &
-!            u(im), w(im), h(im), s(im), q(im), T(im), mu(im), p(im), ie(im), &
-!            Gm, Fxm, Fzm, &
-!            norm_grad_contra, wz, a, upwind_flag, gamma  &
-!        )
-!
-!    end do
-!    end do
-!
-!    i = nx
-!    do j=1,nz
-!    do k=1,n
-!        im = (i - 1) * stride + (j - 1) * n * n + (n - 1) * n + k
-!        ip = (j - 1) * n + k
-!        ib = im
-!
-!        call get_fluxes(&
-!            u(ip), w(ip), h(ip), s(ip), q(ip), T(ip), mu(ip), p(ip), ie(ip), &
-!            grad_xi_2(ib), grad_xi_dot_zeta(ib), grad_zeta_2(ib), &
-!            gamma, Gp, Fxp, Fzp &
-!        )
-!
-!        call get_fluxes(&
-!            u(im), w(im), h(im), s(im), q(im), T(im), mu(im), p(im), ie(im), &
-!            grad_xi_2(ib), grad_xi_dot_zeta(ib), grad_zeta_2(ib), &
-!            gamma, Gm, Fxm, Fzm &
-!        )
-!
-!        norm_grad_contra = sqrt(grad_xi_2(ib))
-!
-!        call boundary_fluxes(&
-!            dummy, dummy, &
-!            dummy, dummy, dummy, &
-!            u(ip), w(ip), h(ip), s(ip), q(ip), T(ip), mu(ip), p(ip), ie(ip), &
-!            Gp, Fxp, Fzp, &
-!            dudt(im), dwdt(im), &
-!            dhdt(im), dsdt(im), dqdt(im), &
-!            u(im), w(im), h(im), s(im), q(im), T(im), mu(im), p(im), ie(im), &
-!            Gm, Fxm, Fzm, &
-!            norm_grad_contra, wz, a, upwind_flag, gamma  &
-!        )
-!
-!    end do
-!    end do
-!
-!end subroutine
+subroutine solve_horz_boundaries(&
+    u, w, h, s, q, T, mu, p, ie, &
+    um, wm, hm, sm, qm, Tm, mum, pm, iem, &
+    up, wp, hp, sp, qp, Tp, mup, pp, iep, &
+    dudt, dwdt, dhdt, dsdt, dqdt, &
+    D, wz, Ja, &
+    grad_xi_2, grad_xi_dot_zeta, grad_zeta_2, &
+    nx, nz, n, &
+    a, upwind_flag, gamma &
+)
+    real(8), intent(in) :: u(:), w(:), h(:), s(:), q(:), T(:), mu(:), p(:), ie(:)
+    real(8), intent(in) :: um(:), wm(:), hm(:), sm(:), qm(:), Tm(:), mum(:), pm(:), iem(:)
+    real(8), intent(in) :: up(:), wp(:), hp(:), sp(:), qp(:), Tp(:), mup(:), pp(:), iep(:)
+    real(8), intent(inout) :: dudt(:), dwdt(:), dhdt(:), dsdt(:), dqdt(:)
+    real(8), intent(in) :: D(:, :), wz, Ja(:)
+    real(8), intent(in) :: grad_xi_2(:), grad_xi_dot_zeta(:), grad_zeta_2(:)
+    integer :: nx, nz, n
+    real(8) :: a, upwind_flag, gamma
+
+    real(8) :: Gp, Gm, Fxp, Fxm, Fzp, Fzm, norm_grad_contra, dummy
+    integer :: i, j, k, idx, stride, ip, im, ib
+
+    stride = nz * n * n
+
+    i = 1
+    do j=1,nz
+    do k=1,n
+        im = (j - 1) * n + k
+        ip = (j - 1) * n * n + k
+        ib = ip
+
+        call get_fluxes(&
+            u(ip), w(ip), h(ip), s(ip), q(ip), T(ip), mu(ip), p(ip), ie(ip), &
+            grad_xi_2(ib), grad_xi_dot_zeta(ib), grad_zeta_2(ib), &
+            gamma, Gp, Fxp, Fzp &
+        )
+
+        call get_fluxes(&
+            um(im), wm(im), hm(im), sm(im), qm(im), Tm(im), mum(im), pm(im), iem(im), &
+            grad_xi_2(ib), grad_xi_dot_zeta(ib), grad_zeta_2(ib), &
+            gamma, Gm, Fxm, Fzm &
+        )
+
+        norm_grad_contra = sqrt(grad_xi_2(ib))
+
+        call boundary_fluxes(&
+            dudt(ip), dwdt(ip), &
+            dhdt(ip), dsdt(ip), dqdt(ip), &
+            u(ip), w(ip), h(ip), s(ip), q(ip), T(ip), mu(ip), p(ip), ie(ip), &
+            Gp, Fxp, Fzp, &
+            dummy, dummy, &
+            dummy, dummy, dummy, &
+            um(im), wm(im), hm(im), sm(im), qm(im), Tm(im), mum(im), pm(im), iem(im), &
+            Gm, Fxm, Fzm, &
+            norm_grad_contra, wz, a, upwind_flag, gamma  &
+        )
+
+    end do
+    end do
+
+    i = nx
+    do j=1,nz
+    do k=1,n
+        im = (i - 1) * stride + (j - 1) * n * n + (n - 1) * n + k
+        ip = (j - 1) * n + k
+        ib = im
+
+        call get_fluxes(&
+            up(ip), wp(ip), hp(ip), sp(ip), qp(ip), Tp(ip), mup(ip), pp(ip), iep(ip), &
+            grad_xi_2(ib), grad_xi_dot_zeta(ib), grad_zeta_2(ib), &
+            gamma, Gp, Fxp, Fzp &
+        )
+
+        call get_fluxes(&
+            u(im), w(im), h(im), s(im), q(im), T(im), mu(im), p(im), ie(im), &
+            grad_xi_2(ib), grad_xi_dot_zeta(ib), grad_zeta_2(ib), &
+            gamma, Gm, Fxm, Fzm &
+        )
+
+        norm_grad_contra = sqrt(grad_xi_2(ib))
+
+        call boundary_fluxes(&
+            dummy, dummy, &
+            dummy, dummy, dummy, &
+            up(ip), wp(ip), hp(ip), sp(ip), qp(ip), Tp(ip), mup(ip), pp(ip), iep(ip), &
+            Gp, Fxp, Fzp, &
+            dudt(im), dwdt(im), &
+            dhdt(im), dsdt(im), dqdt(im), &
+            u(im), w(im), h(im), s(im), q(im), T(im), mu(im), p(im), ie(im), &
+            Gm, Fxm, Fzm, &
+            norm_grad_contra, wz, a, upwind_flag, gamma  &
+        )
+
+    end do
+    end do
+
+end subroutine
 
 
 subroutine get_fluxes(&
@@ -381,7 +381,7 @@ subroutine boundary_fluxes(&
     c_adv = abs(0.5 * (normal_vel_p + normal_vel_m))
     c_snd = 0.5 * (cp + cm)
 
-    F_avg = 0.5 * (F1p + F1m)
+    F_avg = 0.5 * (F1p + F1m) !- a * (hp - hm) * (c_snd + c_adv) * norm_contra
     shat = 0.5 * (sp + sm) - upwind_flag * 0.5 * (sp - sm) * sign(real(1, 8), F_avg)
     qhat = 0.5 * (qp + qm) - upwind_flag * 0.5 * (qp - qm) * sign(real(1, 8), F_avg)
 

@@ -14,6 +14,7 @@ rank = comm.Get_rank()
 size = comm.Get_size()
 
 parser = argparse.ArgumentParser()
+parser.add_argument('--order', type=int, help='Polynomial order')
 parser.add_argument('--nx', type=int, help='Number of cells in horizontal')
 parser.add_argument('--nz', type=int, help='Number of cells in vertical')
 parser.add_argument('--nproc', type=int, help='Number of procs', default=1)
@@ -21,7 +22,7 @@ parser.add_argument('--plot', action='store_true')
 args = parser.parse_args()
 #-6.80467525352385e-05
 # domain size
-xlim = 50_000
+xlim = 10_000
 zlim = 10_000
 # maps to define geometry these can be arbitrary - maps [0, 1]^2 to domain
 zmap = lambda x, z: z * zlim
@@ -35,7 +36,7 @@ nproc = args.nproc
 run_model = (not args.plot) # whether to run model - set false to just plot previous run
 
 g = 9.81 # gravitational acceleration
-poly_order = 3 # spatial order of accuracy
+poly_order = args.order # spatial order of accuracy
 a = 0.5 # kinetic energy dissipation parameter
 upwind = True
 
@@ -107,7 +108,7 @@ def cooling_and_sst_forcing(solver, state, dstatedt):
 
 
 # total run time
-run_time = 600 / 3
+run_time = 600
 
 # save data at these times
 tends = np.array([0.0, (1 / 3), (2 / 3), 1.0]) * run_time
@@ -116,9 +117,11 @@ time_list = []
 energy_list = []
 
 if run_model:
-    solver = FortranThreePhaseEuler2D(xmap, zmap, poly_order, nx, g=g, cfl=1.5, a=a, nz=nz, upwind=upwind, nprocx=nproc, forcing=cooling_and_sst_forcing)
+    solver = FortranThreePhaseEuler2D(xmap, zmap, poly_order, nx, g=g, cfl=0.25, a=0, nz=nz, upwind=upwind, nprocx=nproc, forcing=None)
     u, v, density, s, qw, qv, ql, qi = initial_condition(solver, pert=2.0)
     solver.set_initial_condition(u, v, density, s, qw)
+    # print('dt:', solver.get_dt())
+    # exit(0)
 
     E0 = solver.energy()
     for i, tend in enumerate(tends):

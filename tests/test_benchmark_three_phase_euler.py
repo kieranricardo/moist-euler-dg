@@ -82,7 +82,20 @@ def initial_condition(solver_):
 
 def test_solves_equivalent(fsolver, pysolver):
 
-    state = 100 * np.random.random(fsolver.state.shape)
+    state = np.zeros_like(fsolver.state)
+
+    u1, w1, *arrs1 = fsolver.get_vars(state)
+    _, _, *arrs2 = fsolver.get_vars(fsolver.state)
+
+    u_phys, w_phys = 2 * (np.random.random(u1.shape) - 0.5), 2 * (np.random.random(w1.shape) - 0.5)
+    u_cov, w_cov = fsolver.phys_to_cov(u_phys, w_phys)
+    u1[:] = u_cov
+    w_cov[:] = w_cov
+
+    for arr1, arr2 in zip(arrs1, arrs2):
+        pert = 2 * (np.random.random(arr1.shape) - 0.5)
+        arr1[:] = arr2 * (1 + 0.1 * pert)
+
     out1 = np.zeros_like(state)
     out2 = np.zeros_like(state)
 
