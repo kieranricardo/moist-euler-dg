@@ -117,7 +117,7 @@ time_list = []
 energy_list = []
 
 if run_model:
-    solver = FortranThreePhaseEuler2D(xmap, zmap, poly_order, nx, g=g, cfl=0.25, a=0, nz=nz, upwind=upwind, nprocx=nproc, forcing=None)
+    solver = FortranThreePhaseEuler2D(xmap, zmap, poly_order, nx, g=g, cfl=0.7, a=0.5, nz=nz, upwind=upwind, nprocx=nproc, forcing=None)
     u, v, density, s, qw, qv, ql, qi = initial_condition(solver, pert=2.0)
     solver.set_initial_condition(u, v, density, s, qw)
     # print('dt:', solver.get_dt())
