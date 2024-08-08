@@ -60,6 +60,11 @@ def test_moisture_fraction_solver(solver):
     enthalpy, T, p, ie, mu, qv, ql = solver.get_thermodynamic_quantities(h, s, qw)
     np.allclose((qw - qv), 0.0)
 
+    gv = solver.gibbs_vapour(T, qv, h)
+    qd = 1 - qw
+    gd = solver.gibbs_air(T, qd, h)
+    assert np.allclose(gv - gd, mu)
+
     _, _, h, s, qw, *_ = solver.get_vars(solver.state)
     qw *= 2.0
     enthalpy, T, p, ie, mu, qv, ql = solver.get_thermodynamic_quantities(h, s, qw)

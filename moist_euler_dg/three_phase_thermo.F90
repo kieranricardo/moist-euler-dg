@@ -108,7 +108,6 @@ subroutine solve_fractions_from_entropy_point(&
         qv_out = qv
         ql_out = ql
         qi_out = qi
-        gibbs_v = -cpv * (logT - logT0) - cpv + Rv * (logpv - logp0) - Ls0 / T0
         gibbs_d = cpd * T - T * cvd * logT + Rd * T * (logqd + logdensity + logRd)
         mu = gibbs_v - gibbs_d
         ind = 2.0
