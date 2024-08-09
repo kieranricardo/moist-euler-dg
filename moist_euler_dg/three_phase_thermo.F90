@@ -140,6 +140,7 @@ subroutine solve_fractions_from_entropy_point(&
                 qv_out = qv
                 ql_out = 0.0
                 qi_out = qi
+                return
             end if
         end if
     else
@@ -168,9 +169,28 @@ subroutine solve_fractions_from_entropy_point(&
                 qv_out = qv
                 ql_out = 0.0
                 qi_out = qi
+                return
             end if
         end if
     end if
+
+!    ! check ice - liquid only
+!    sc = s - qd * sa
+!    qv = 1.0e-12 ! need this to be non-negative
+!    ql = (sc - si * (qw - qv)) / (sl - si)
+!    qi = (qw - qv) - ql
+!
+!    if ((ql >= 0.0) .and. (qi >= 0)) then
+!        qv_out = qv
+!        ql_out = ql
+!        qi_out = qi
+!        T = T0
+!        gibbs_v = 0.0
+!        gibbs_d = cpd * T - T * cvd * logT0 + Rd * T * (logqd + logdensity + logRd)
+!        mu = gibbs_v - gibbs_d
+!        ind = 1.0
+!        return
+!    end if
 
 end subroutine solve_fractions_from_entropy_point
 
@@ -213,7 +233,7 @@ subroutine solve_vapour_liquid_fractions(&
     ql = qw - qv
     qi = 0.0
 
-    do i = 1, 10
+    do i = 1, 100
 
         logqv = log(qv)
 
@@ -278,12 +298,24 @@ subroutine solve_vapour_liquid_fractions(&
         dvaldqv = (dgibbs_vdqv - dgibbs_ldqv) - (dgibbs_vdql - dgibbs_ldql)
         update = -val / dvaldqv
 
-        if ((T > T0) .and. (abs(update) < 1e-10)) then
-            qv_out = qv
-            ql_out = ql
-            gibbs_d = cpd * T - T * cvd * logT + Rd * T * (logqd + logdensity + logRd)
-            mu = gibbs_v - gibbs_d
-            ind = 3.0
+!        if (abs(val) < 1e-7) then
+!            qv_out = qv
+!            ql_out = ql
+!            gibbs_d = cpd * T - T * cvd * logT + Rd * T * (logqd + logdensity + logRd)
+!            mu = gibbs_v - gibbs_d
+!            ind = 3.0
+!            return
+!        end if
+
+        if ((abs(update / qw) < 1e-10) .and. (i > 6)) then
+            if (T > T0) then
+                qv_out = qv
+                ql_out = ql
+                gibbs_d = cpd * T - T * cvd * logT + Rd * T * (logqd + logdensity + logRd)
+                mu = gibbs_v - gibbs_d
+                ind = 3.0
+            end if
+
             return
         end if
 
@@ -292,13 +324,6 @@ subroutine solve_vapour_liquid_fractions(&
         ql = qw - qv
 
     end do
-
-!    if ((T >= T0)) then
-!        qv_out = qv
-!        ql_out = ql
-!        ind = 3.0
-!        return
-!    end if
 
 end subroutine solve_vapour_liquid_fractions
 
@@ -341,7 +366,7 @@ subroutine solve_vapour_ice_fractions(&
     ql = 0.0
     qi = qw - qv
 
-    do i = 1, 10
+    do i = 1, 100
 
         logqv = log(qv)
 
@@ -406,12 +431,23 @@ subroutine solve_vapour_ice_fractions(&
         dvaldqv = (dgibbs_vdqv - dgibbs_idqv) - (dgibbs_vdqi - dgibbs_idqi)
         update = -val / dvaldqv
 
-        if ((T <= T0) .and. (abs(update) < 1e-10)) then
-            qv_out = qv
-            qi_out = qi
-            gibbs_d = cpd * T - T * cvd * logT + Rd * T * (logqd + logdensity + logRd)
-            mu = gibbs_v - gibbs_d
-            ind = 4.0
+!        if (abs(val) < 1e-7) then
+!            qv_out = qv
+!            qi_out = qi
+!            gibbs_d = cpd * T - T * cvd * logT + Rd * T * (logqd + logdensity + logRd)
+!            mu = gibbs_v - gibbs_d
+!            ind = 4.0
+!            return
+!        end if
+
+        if ((abs(update / qw) < 1e-10) .and. (i > 6)) then
+            if (T <= T0) then
+                qv_out = qv
+                qi_out = qi
+                gibbs_d = cpd * T - T * cvd * logT + Rd * T * (logqd + logdensity + logRd)
+                mu = gibbs_v - gibbs_d
+                ind = 4.0
+            end if
             return
         end if
 

@@ -40,6 +40,8 @@ poly_order = args.order # spatial order of accuracy
 a = 0.5 # kinetic energy dissipation parameter
 upwind = True
 
+SST  = 290.0
+
 # experiment name - change this for new experiments!
 exp_name_short = 'ice-bubble'
 experiment_name = f'{exp_name_short}-nx-{nx}-nz-{nz}-p{poly_order}'
@@ -54,41 +56,81 @@ if rank == 0:
 comm.barrier()
 #
 
-def initial_condition(solver, pert):
-
-    # initial velocity is zero
-    u = np.zeros_like(solver.zs)
-    v = np.zeros_like(solver.zs)
-
+def neutrally_stable_dry_profile(solver):
+    p_surface = 1_00_000.0  # surface pressure in Pa
+    T_surface = 300  # surface temperature in Kelvin
     # create a hydrostatically balanced pressure and density profile
-    dry_theta = 300
-    dexdy = -g / (solver.cpd * dry_theta)
+    dexdy = -g / (solver.cpd * T_surface)
     ex = 1 + dexdy * solver.zs
-    p = 1_00_000.0 * ex ** (solver.cpd / solver.Rd)
-    density = p / (solver.Rd * ex * dry_theta)
+    p = p_surface * ex ** (solver.cpd / solver.Rd)
+    density = p / (solver.Rd * ex * T_surface)
 
-    qw = solver.rh_to_qw(0.95, p, density)
-    qd = 1 - qw
+    return density, p
 
-    R = solver.Rd * qd + solver.Rv * qw
-    T = p / (R * density)
 
-    assert (qw <= solver.saturation_fraction(T, density)).all()
+def initial_condition(solver, pert=0.0):
 
-    rad_max = 2_000
-    rad = np.sqrt(solver.xs ** 2 + (solver.zs - 1.0 * rad_max) ** 2)
-    mask = rad < rad_max
-    density -= mask * (pert * density / 300) * (np.cos(np.pi * (rad / rad_max) / 2) ** 2)
+    # initial wind is zero
+    u = np.zeros_like(solver.xs)
+    w = np.zeros_like(solver.xs)
 
-    T = p / (R * density)
-    assert (qw <= solver.saturation_fraction(T, density)).all()
+    density, p = neutrally_stable_dry_profile(solver)
 
-    s = qd * solver.entropy_air(T, qd, density)
-    s += qw * solver.entropy_vapour(T, qw, density)
+    # add arbitrary moisute profile
+    qw = solver.rh_to_qw(0.95, p, density)  # choose 95% relative humidity
 
-    qv, ql, qi = solver.solve_fractions_from_entropy(density, qw, s)
+    # model must be initialized with entropy not temperature
+    # so convert density, pressure, qw profile to a density, entropy, qw profile
+    s = solver.entropy(density, qw, p=p)
 
-    return u, v, density, s, qw, qv, ql, qi
+    # add perturbation/bubble to profile
+    # increase entropy
+    bubble_radius = 2_000
+    distance = np.sqrt(solver.xs ** 2 + (solver.zs - 1.0 * bubble_radius) ** 2)
+    mask = distance < bubble_radius
+    s += mask * pert * 3 * (np.cos(np.pi * (distance / bubble_radius) / 2) ** 2)
+
+    return u, w, density, s, qw
+
+
+# def initial_condition(solver, pert):
+#     # initial velocity is zero
+#     u = np.zeros_like(solver.zs)
+#     v = np.zeros_like(solver.zs)
+#
+#     # create a hydrostatically balanced pressure and density profile
+#     # set a constant dry potential temperature s.t. bottom/ground/sea level temperature = SST
+#     p_ground = 1_00_000.0
+#     potential_temperature = 300 * (solver.p0_ex / p_ground) ** (solver.R / solver.cp)
+#
+#     dexdy = -g / (solver.cpd * potential_temperature)
+#     ex = 1 + dexdy * solver.zs
+#
+#     p = p_ground * ex ** (solver.cpd / solver.Rd)
+#     density = p / (solver.Rd * ex * potential_temperature)
+#
+#     # set an arbitrary moisture profile
+#     qw = 2 * solver.rh_to_qw(0.95, p, density)
+#
+#     # add pertubation to profile - this creates the bubble
+#     rad_max = 2_000
+#     rad = np.sqrt(solver.xs ** 2 + (solver.zs - 1.0 * rad_max) ** 2)
+#     mask = rad < rad_max
+#     density -= mask * (pert * density / 300) * (np.cos(np.pi * (rad / rad_max) / 2) ** 2)
+#
+#     # set T and entropy based on dry values only
+#     # with the addition of water the density, T, water profile is only approx in hydrostatic balance
+#     T = p / (solver.Rd * density)
+#
+#     # model must be initialized with entropy not temperature - so convert density, T, qw profile to density, entropy, qw
+#     # this changes the p profile slightly
+#     s = solver.entropy(density, qw, T=T)
+#
+#     # could alternatively compute with s = solver.entropy(density, qw, p=p) - but this changes T profile slightly
+#
+#     enthalpy, T_, p_, ie, mu, qv_, ql_ = solver.get_thermodynamic_quantities(density, s, qw)
+#
+#     return u, v, density, s, qw
 
 
 def cooling_and_sst_forcing(solver, state, dstatedt):
@@ -96,15 +138,16 @@ def cooling_and_sst_forcing(solver, state, dstatedt):
     dudt, dwdt, dhdt, dsdt, dqdt, *_ = solver.get_vars(dstatedt)
 
     # internal cooling
-    dTdt = -1.0 / (3600 * 24)
-    dsdt[:] += dTdt * solver.cvd / T
+    T_forcing = -0.0 / (3600 * 24) # constantly cool at a rate of 1K per day
+    s_forcing = T_forcing * solver.cvd / T # convert temperature forcing to entropy forcing
 
-    # sst boundary forcing at bottom
+    # boundary forcing at bottom - force bottom temperature  towards SST
     bottom_bdry_idx = solver.ip_vert_ext
-    dsdt[bottom_bdry_idx] -= dTdt * solver.cvd / T[bottom_bdry_idx] #
-    SST = 290.0
-    dTdt = -(T[bottom_bdry_idx] - SST) / 600 # 10 mins relaxation time
-    dsdt[bottom_bdry_idx] += dTdt * solver.cvd / T[bottom_bdry_idx]
+    s_forcing[bottom_bdry_idx] = 0.0
+    T_forcing = -(T[bottom_bdry_idx] - SST) / 60 # 1 mins relaxation time
+    s_forcing[bottom_bdry_idx] += T_forcing * solver.cvd / T[bottom_bdry_idx]
+
+    dsdt += s_forcing
 
 
 # total run time
@@ -117,10 +160,29 @@ time_list = []
 energy_list = []
 
 if run_model:
-    solver = FortranThreePhaseEuler2D(xmap, zmap, poly_order, nx, g=g, cfl=0.7, a=0.5, nz=nz, upwind=upwind, nprocx=nproc, forcing=None)
-    u, v, density, s, qw, qv, ql, qi = initial_condition(solver, pert=2.0)
+    solver = FortranThreePhaseEuler2D(xmap, zmap, poly_order, nx, g=g, cfl=0.5, a=0.5, nz=nz, upwind=upwind, nprocx=nproc, forcing=None)
+    u, v, density, s, qw = initial_condition(solver, pert=2.0)
     solver.set_initial_condition(u, v, density, s, qw)
-    # print('dt:', solver.get_dt())
+    # print("Bottom temp range:", solver.T[:, 0, :, 0].min(), solver.T[:, 0, :, 0].max())
+
+    # if rank == 0:
+    #     density = 0.6275959315151061;
+    #     entropy = 2531.0038776852075;
+    #     qw = 0.01330944126634543;
+    #     density = np.array([density]); entropy = np.array([entropy]); qw = np.array([qw]);
+    #     qv, ql, qi = solver.solve_fractions_from_entropy(density, qw, entropy)
+    #     print(qv, ql, qi)
+    #
+    #     pysolver = ThreePhaseEuler2D(xmap, zmap, poly_order, nx, g=g, cfl=0.5, a=0.5, nz=nz, upwind=upwind, nprocx=nproc, forcing=None)
+    #     density = 0.6275959315151061;
+    #     entropy = 2531.0038776852075;
+    #     qw = 0.01330944126634543;
+    #     density = np.array([density]);
+    #     entropy = np.array([entropy]);
+    #     qw = np.array([qw]);
+    #     qv, ql, qi = pysolver.solve_fractions_from_entropy(density, qw, entropy)
+    #     print(qv, ql, qi)
+    #
     # exit(0)
 
     E0 = solver.energy()
@@ -142,6 +204,7 @@ if run_model:
 
     if rank == 0:
         print('Rel energy change:', (E1 - E0) / E0)
+        print("Bottom temp range:", solver.T[:, 0, :, 0].min(), solver.T[:, 0, :, 0].max())
 
 # plotting
 elif rank == 0:
@@ -150,7 +213,8 @@ elif rank == 0:
     #
     solver_plot = ThreePhaseEuler2D(xmap, zmap, poly_order, nx, g=g, cfl=0.5, a=a, nz=nz, upwind=upwind, nprocx=1)
     # base state of the initial condition (excludes bubble perturbation)
-    _, _, _, s0, qw0, qv0, ql0, qi0 = initial_condition(solver_plot, pert=0.0)
+    _, _, h0, s0, qw0 = initial_condition(solver_plot, pert=0.0)
+    qv0, ql0, qi0 = solver_plot.solve_fractions_from_entropy(h0, qw0, s0)
 
     def fmt(x, pos):
         a, b = '{:.2e}'.format(x).split('e')

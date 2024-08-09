@@ -211,13 +211,6 @@ class ThreePhaseEuler2D(TwoPhaseEuler2D):
         ql_ = (ec - ei * (qw - qv_)) / (el - ei)
         qi_ = (qw - qv_) - ql_
 
-        # if verbose:
-        #     print('Triple point check:')
-        #     print('qw:', qw)
-        #     print('qv:', qv_)
-        #     print('ql:', ql_)
-        #     print('qi:', qi_, '\n')
-
         triple = 1.0 * (ql_ >= 0.0) * (qi_ >= 0.0)
 
         logqw = np.log(qw)
@@ -366,3 +359,28 @@ class ThreePhaseEuler2D(TwoPhaseEuler2D):
         qi[:] = mask * qi1 + (1.0 - mask) * qi2
 
         return qv, ql, qi
+
+    def entropy(self, density, qw, T=None, p=None):
+        qd = 1.0 - qw
+
+        if T is None:
+            if p is None:
+                raise ValueError("Either T or p must be specified")
+
+            qv_sat = self.rh_to_qw(1.0, p, density)
+            qv = np.minimum(qv_sat, qw)
+            R = self.Rd * qd + self.Rv * qv
+            T = p / (R * density)
+        else:
+            qv_sat = self.saturation_fraction(T, density)
+            qv = np.minimum(qv_sat, qw)
+
+        ql = (T >= self.T0) * (qw - qv)
+        qi = (T < self.T0) * (qw - qv)
+
+        s = qd * self.entropy_air(T, qd, density)
+        s += qv * self.entropy_vapour(T, qv, density)
+        s += ql * self.entropy_liquid(T)
+        s += qi * self.entropy_ice(T)
+
+        return s
