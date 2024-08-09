@@ -56,81 +56,74 @@ if rank == 0:
 comm.barrier()
 #
 
-def neutrally_stable_dry_profile(solver):
-    p_surface = 1_00_000.0  # surface pressure in Pa
-    T_surface = 300  # surface temperature in Kelvin
-    # create a hydrostatically balanced pressure and density profile
-    dexdy = -g / (solver.cpd * T_surface)
-    ex = 1 + dexdy * solver.zs
-    p = p_surface * ex ** (solver.cpd / solver.Rd)
-    density = p / (solver.Rd * ex * T_surface)
-
-    return density, p
-
-
-def initial_condition(solver, pert=0.0):
-
-    # initial wind is zero
-    u = np.zeros_like(solver.xs)
-    w = np.zeros_like(solver.xs)
-
-    density, p = neutrally_stable_dry_profile(solver)
-
-    # add arbitrary moisute profile
-    qw = solver.rh_to_qw(0.95, p, density)  # choose 95% relative humidity
-
-    # model must be initialized with entropy not temperature
-    # so convert density, pressure, qw profile to a density, entropy, qw profile
-    s = solver.entropy(density, qw, p=p)
-
-    # add perturbation/bubble to profile
-    # increase entropy
-    bubble_radius = 2_000
-    distance = np.sqrt(solver.xs ** 2 + (solver.zs - 1.0 * bubble_radius) ** 2)
-    mask = distance < bubble_radius
-    s += mask * pert * 3 * (np.cos(np.pi * (distance / bubble_radius) / 2) ** 2)
-
-    return u, w, density, s, qw
-
-
-# def initial_condition(solver, pert):
-#     # initial velocity is zero
-#     u = np.zeros_like(solver.zs)
-#     v = np.zeros_like(solver.zs)
-#
+# def neutrally_stable_dry_profile(solver):
+#     p_surface = 1_00_000.0  # surface pressure in Pa
+#     T_surface = 300  # surface temperature in Kelvin
 #     # create a hydrostatically balanced pressure and density profile
-#     # set a constant dry potential temperature s.t. bottom/ground/sea level temperature = SST
-#     p_ground = 1_00_000.0
-#     potential_temperature = 300 * (solver.p0_ex / p_ground) ** (solver.R / solver.cp)
-#
-#     dexdy = -g / (solver.cpd * potential_temperature)
+#     dexdy = -g / (solver.cpd * T_surface)
 #     ex = 1 + dexdy * solver.zs
+#     p = p_surface * ex ** (solver.cpd / solver.Rd)
+#     density = p / (solver.Rd * ex * T_surface)
 #
-#     p = p_ground * ex ** (solver.cpd / solver.Rd)
-#     density = p / (solver.Rd * ex * potential_temperature)
+#     return density, p
 #
-#     # set an arbitrary moisture profile
-#     qw = 2 * solver.rh_to_qw(0.95, p, density)
 #
-#     # add pertubation to profile - this creates the bubble
-#     rad_max = 2_000
-#     rad = np.sqrt(solver.xs ** 2 + (solver.zs - 1.0 * rad_max) ** 2)
-#     mask = rad < rad_max
-#     density -= mask * (pert * density / 300) * (np.cos(np.pi * (rad / rad_max) / 2) ** 2)
+# def initial_condition(solver, pert=0.0):
 #
-#     # set T and entropy based on dry values only
-#     # with the addition of water the density, T, water profile is only approx in hydrostatic balance
-#     T = p / (solver.Rd * density)
+#     # initial wind is zero
+#     u = np.zeros_like(solver.xs)
+#     w = np.zeros_like(solver.xs)
 #
-#     # model must be initialized with entropy not temperature - so convert density, T, qw profile to density, entropy, qw
-#     # this changes the p profile slightly
-#     s = solver.entropy(density, qw, T=T)
+#     density, p = neutrally_stable_dry_profile(solver)
 #
-#     # could alternatively compute with s = solver.entropy(density, qw, p=p) - but this changes T profile slightly
+#     # add arbitrary moisute profile
+#     qw = solver.rh_to_qw(0.95, p, density)  # choose 95% relative humidity
 #
-#     enthalpy, T_, p_, ie, mu, qv_, ql_ = solver.get_thermodynamic_quantities(density, s, qw)
+#     # model must be initialized with entropy not temperature
+#     # so convert density, pressure, qw profile to a density, entropy, qw profile
+#     s = solver.entropy(density, qw, p=p)
 #
-#     return u, v, density, s, qw
+#     # add perturbation/bubble to profile
+#     # increase entropy
+#     bubble_radius = 2_000
+#     distance = np.sqrt(solver.xs ** 2 + (solver.zs - 1.0 * bubble_radius) ** 2)
+#     mask = distance < bubble_radius
+#     s += mask * pert * 3 * (np.cos(np.pi * (distance / bubble_radius) / 2) ** 2)
+#
+#     return u, w, density, s, qw
+
+
+def initial_condition(solver, pert):
+    # initial velocity is zero
+    u = np.zeros_like(solver.zs)
+    v = np.zeros_like(solver.zs)
+
+    dry_theta = 300
+    dexdy = -g / (solver.cpd * dry_theta)
+    ex = 1 + dexdy * solver.zs
+    p = 1_00_000.0 * ex ** (solver.cpd / solver.Rd)
+    density = p / (solver.Rd * ex * dry_theta)
+
+    qw = solver.rh_to_qw(0.95, p, density)
+    qd = 1 - qw
+
+    R = solver.Rd * qd + solver.Rv * qw
+    T = p / (R * density)
+
+    assert (qw <= solver.saturation_fraction(T, density)).all()
+
+    rad_max = 2_000
+    rad = np.sqrt(solver.xs ** 2 + (solver.zs - 1.0 * rad_max) ** 2)
+    mask = rad < rad_max
+    density -= mask * (pert * density / 300) * (np.cos(np.pi * (rad / rad_max) / 2) ** 2)
+
+    T = p / (R * density)
+    assert (qw <= solver.saturation_fraction(T, density)).all()
+
+    s = qd * solver.entropy_air(T, qd, density)
+    s += qw * solver.entropy_vapour(T, qw, density)
+
+    return u, v, density, s, qw
 
 
 def cooling_and_sst_forcing(solver, state, dstatedt):

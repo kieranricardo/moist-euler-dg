@@ -405,7 +405,7 @@ subroutine boundary_fluxes(&
 
     fluxp = F1p
     fluxm = F1m
-    num_flux = 0.5 * (F1p + F1m) !- a * (hp - hm) * (c_snd + c_adv) * norm_contra
+    num_flux = 0.5 * (F1p + F1m) - a * (hp - hm) * (c_snd + c_adv) * norm_contra
     ddt_hp = ddt_hp + (num_flux - fluxp) / wz
     ddt_hm = ddt_hm - (num_flux - fluxm) / wz
 
