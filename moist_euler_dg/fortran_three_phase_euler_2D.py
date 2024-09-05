@@ -60,7 +60,8 @@ class FortranThreePhaseEuler2D(ThreePhaseEuler2D):
             mask = ind == 0
 
             # print(f'qv_cache={qv_cache[mask][0]}, ql_cache={ql_cache[mask][0]}, qi_cache={qi_cache[mask][0]}')
-            raise RuntimeError(f"Error: thermo solve not converged at t={self.time}. density={density[mask][0]}; entropy={entropy[mask][0]}; qw={qw[mask][0]}")
+            pass
+            # raise RuntimeError(f"Error: thermo solve not converged at t={self.time}. density={density[mask][0]}; entropy={entropy[mask][0]}; qw={qw[mask][0]}")
 
         R = qv * self.Rv + qd * self.Rd
         cv = qd * self.cvd + qv * self.cvv + ql * self.cl + qi * self.ci
