@@ -100,3 +100,31 @@ def test_moisture_fraction_solver(solver):
     qw = np.array([qw]);
 
     enthalpy, T, p, ie, mu, qv, ql = solver.get_thermodynamic_quantities(density, entropy, qw)
+
+    density = 0.6275959315151061;
+    entropy = 2531.0038776852075;
+    qw = 0.01330944126634543;
+    density = np.array([density]);
+    entropy = np.array([entropy]);
+    qw = np.array([qw]);
+
+    # check all ice edge case
+    density = 0.0001502051125914991;
+    entropy = 2253.208010491557;
+    qw = 0.0075986328009139
+    density = np.array([density]);
+    entropy = np.array([entropy]);
+    qw = np.array([qw]);
+    enthalpy, T, p, ie, mu, qv, ql = solver.get_thermodynamic_quantities(density, entropy, qw)
+
+    qi = qw - (qv + ql)
+
+    assert np.allclose(qi, qw)
+    assert np.allclose(qv, 0.0)
+    assert np.allclose(ql, 0.0)
+
+    qd = 1.0 - qw
+    gd = solver.gibbs_air(T, qd, density)
+    gi = solver.gibbs_ice(T)
+
+    assert np.allclose(gi - gd, mu)

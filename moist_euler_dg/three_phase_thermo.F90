@@ -52,6 +52,7 @@ subroutine solve_fractions_from_entropy_point(&
 
     integer :: i
 
+    ! convergence indicator
     ind = 0.0
 
     logdensity = log(density)
@@ -174,23 +175,37 @@ subroutine solve_fractions_from_entropy_point(&
         end if
     end if
 
-!    ! check ice - liquid only
-!    sc = s - qd * sa
-!    qv = 1.0e-12 ! need this to be non-negative
-!    ql = (sc - si * (qw - qv)) / (sl - si)
-!    qi = (qw - qv) - ql
-!
-!    if ((ql >= 0.0) .and. (qi >= 0)) then
-!        qv_out = qv
-!        ql_out = ql
-!        qi_out = qi
-!        T = T0
-!        gibbs_v = 0.0
-!        gibbs_d = cpd * T - T * cvd * logT0 + Rd * T * (logqd + logdensity + logRd)
-!        mu = gibbs_v - gibbs_d
-!        ind = 1.0
-!        return
-!    end if
+    ! check ice only
+    qv = 1.0e-12 * qw ! need this to be non-negative
+    ql = 0.0
+    qi = qw - qv
+
+    logqv = log(qv)
+
+    R = qv * Rv + qd * Rd
+    cv = qd * cvd + qv * cvv + ql * cl + qi * ci
+
+    cvlogT = s + R * logdensity + qd * Rd * (logqd + logRd) + qv * Rv * logqv
+    cvlogT = cvlogT - qv * c0 - ql * c1 - qi * c2
+    logT = (1 / cv) * cvlogT
+    T = exp(logT)
+
+    pv = qv * Rv * density * T
+    logpv = logqv + logRv + logdensity + logT
+
+    gibbs_v = -cpv * T * (logT - logT0) + Rv * T * (logpv - logp0) + Ls0 * (1 - T / T0)
+    gibbs_l = -cl * T * (logT - logT0) + Lf0 * (1 - T / T0)
+    gibbs_i = -ci * T * (logT - logT0)
+
+    if ((gibbs_i <= gibbs_l) .and. (gibbs_i <= gibbs_v)) then
+        qv_out = qv
+        ql_out = ql
+        qi_out = qi
+        gibbs_d = cpd * T - T * cvd * logT + Rd * T * (logqd + logdensity + logRd)
+        mu = gibbs_i - gibbs_d
+        ind = 5.0
+        return
+    end if
 
 end subroutine solve_fractions_from_entropy_point
 
