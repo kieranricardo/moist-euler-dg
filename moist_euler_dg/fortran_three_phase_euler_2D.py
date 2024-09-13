@@ -58,7 +58,7 @@ class FortranThreePhaseEuler2D(ThreePhaseEuler2D):
 
         if (ind == 0).any():
             mask = ind == 0
-
+            print(f"Warning: thermo solve not converged at t={self.time}. density={density[mask][0]}; entropy={entropy[mask][0]}; qw={qw[mask][0]}")
             # raise RuntimeError(f"Error: thermo solve not converged at t={self.time}. density={density[mask][0]}; entropy={entropy[mask][0]}; qw={qw[mask][0]}")
 
         R = qv * self.Rv + qd * self.Rd
