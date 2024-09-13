@@ -122,16 +122,16 @@ class TwoPhaseEuler2D(Euler2D):
 
         if (hqw_cell_means <= 0).any():
             print("Negative water cell mean detected")
+            raise RuntimeError("Negative water cell mean detected")
             # print("x-coords:", self.xs[state['hqw'] <= 0], "\n")
             # print("y-coords:", self.ys[state['hqw'] <= 0], "\n")
-            exit(0)
 
         if (qw <= 0).any():
             print("Negative water mass - limiting failed :( ")
             print('hqw_limited min:', hqw_limited.min())
+            raise RuntimeError("Negative water mass - limiting failed :( ")
             # print("x-coords:", self.xs[state['hqw'] <= 0], "\n")
             # print("y-coords:", self.ys[state['hqw'] <= 0], "\n")
-            exit(0)
 
     def get_fluxes(self, u, w, h, s, q, T, mu, p, ie, idx=slice(None)):
 
