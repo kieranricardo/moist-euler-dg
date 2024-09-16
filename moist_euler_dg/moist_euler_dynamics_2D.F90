@@ -381,7 +381,7 @@ subroutine boundary_fluxes(&
     c_adv = abs(0.5 * (normal_vel_p + normal_vel_m))
     c_snd = 0.5 * (cp + cm)
 
-    F_avg = 0.5 * (F1p + F1m) !- a * (hp - hm) * (c_snd + c_adv) * norm_contra
+    F_avg = 0.5 * (F1p + F1m) - a * (hp - hm) * (c_snd + c_adv) * norm_contra
     shat = 0.5 * (sp + sm) - upwind_flag * 0.5 * (sp - sm) * sign(real(1, 8), F_avg)
     qhat = 0.5 * (qp + qm) - upwind_flag * 0.5 * (qp - qm) * sign(real(1, 8), F_avg)
 
@@ -405,7 +405,7 @@ subroutine boundary_fluxes(&
 
     fluxp = F1p
     fluxm = F1m
-    num_flux = 0.5 * (F1p + F1m) - a * (hp - hm) * (c_snd + c_adv) * norm_contra
+    num_flux = F_avg ! 0.5 * (F1p + F1m) - a * (hp - hm) * (c_snd + c_adv) * norm_contra
     ddt_hp = ddt_hp + (num_flux - fluxp) / wz
     ddt_hm = ddt_hm - (num_flux - fluxm) / wz
 

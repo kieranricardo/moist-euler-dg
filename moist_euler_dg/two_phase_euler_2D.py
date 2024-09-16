@@ -265,7 +265,7 @@ class TwoPhaseEuler2D(Euler2D):
         c_adv = np.abs(0.5 * (normal_vel_p + normal_vel_m))
         c_snd = 0.5 * (cp + cm)
 
-        F_num_flux = 0.5 * (Fp + Fm) #- self.a * (c_adv + c_snd) * (hp - hm) * norm_contra
+        F_num_flux = 0.5 * (Fp + Fm) - self.a * (c_adv + c_snd) * (hp - hm) * norm_contra
 
         fluxp = Gp
         fluxm = Gm
