@@ -1,5 +1,6 @@
 from matplotlib import pyplot as plt
-from moist_euler_dg.three_phase_euler_2D import ThreePhaseEuler2D
+# from moist_euler_dg.three_phase_euler_2D import ThreePhaseEuler2D
+from moist_euler_dg.fortran_three_phase_euler_2D import FortranThreePhaseEuler2D as ThreePhaseEuler2D
 import numpy as np
 import time
 import os
@@ -25,10 +26,10 @@ nz = args.n
 nproc = args.nproc
 run_model = (not args.plot) # whether to run model - set false to just plot previous run
 nx = nz
-eps = 0.8
+cfl = 0.5
 g = 9.81
 poly_order = 3
-a = 0.0
+a = 0.5
 upwind = True
 
 exp_name_short = 'ice-bubble'
@@ -37,7 +38,7 @@ data_dir = os.path.join('data', experiment_name)
 plot_dir = os.path.join('plots', experiment_name)
 
 if rank == 0:
-    print(f"---------- Ice bubble with nx={nx}, nz={nz}, cfl={eps}")
+    print(f"---------- Ice bubble with nx={nx}, nz={nz}, cfl={cfl}")
     if not os.path.exists(plot_dir): os.makedirs(plot_dir)
     if not os.path.exists(data_dir): os.makedirs(data_dir)
 
@@ -77,7 +78,7 @@ def initial_condition(xs, ys, solver, pert):
     s = qd * solver.entropy_air(T, qd, density)
     s += qw * solver.entropy_vapour(T, qw, density)
 
-    qv, ql, qi = solver.solve_fractions_from_entropy(density, qw, s, verbose=True)
+    qv, ql, qi = solver.solve_fractions_from_entropy(density, qw, s)
     #  0.3410208713540216 0.10594892674155956 0.6589791286459784
     # print('qw min-max:', qw.min(), qw.max())
     # print('T min-max:', T.min() - 273, T.max() - 273)
@@ -102,7 +103,7 @@ entropy_list = []
 water_var_list = []
 
 if run_model:
-    solver = ThreePhaseEuler2D(xmap, zmap, poly_order, nx, g=g, cfl=1.0, a=a, nz=nz, upwind=upwind, nprocx=nproc)
+    solver = ThreePhaseEuler2D(xmap, zmap, poly_order, nx, g=g, cfl=cfl, a=a, nz=nz, upwind=upwind, nprocx=nproc)
     u, v, density, s, qw, qv, ql, qi = initial_condition(solver.xs, solver.zs, solver, pert=2.0)
     solver.set_initial_condition(u, v, density, s, qw)
     for i, tend in enumerate(tends):
@@ -166,7 +167,6 @@ elif rank == 0:
     plt.yscale('symlog', linthresh=1e-15)
     fp = os.path.join(plot_dir, f'conservation_{exp_name_short}')
     plt.savefig(fp, bbox_inches="tight")
-    plt.show()
 
     solver_plot = ThreePhaseEuler2D(xmap, zmap, poly_order, nx, g=g, cfl=0.5, a=a, nz=nz, upwind=upwind, nprocx=1)
     _, _, _, s0, qw0, qv0, ql0, qi0 = initial_condition(solver_plot.xs, solver_plot.zs, solver_plot, pert=0.0)

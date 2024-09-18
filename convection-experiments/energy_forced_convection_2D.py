@@ -48,7 +48,7 @@ a = 0.5 # kinetic energy dissipation parameter
 upwind = True
 
 # experiment name - change this for new experiments!
-exp_name_short = 'forced-convection'
+exp_name_short = 'energy-forced-convection'
 experiment_name = f'{exp_name_short}-nx-{nx}-nz-{nz}-p{poly_order}'
 data_dir = os.path.join('data', experiment_name)
 plot_dir = os.path.join('plots', experiment_name)
@@ -90,23 +90,48 @@ def initial_condition(solver):
     return u, w, density, s, qw
 
 
-# forcing - this adds uniform cooling to air
-# and forces the bottom temperature to match the SST
-def cooling_and_sst_forcing(solver, state, dstatedt):
+def energy_forcing(solver, state, dstatedt):
     u, w, h, s, q, T, mu, p, ie = solver.get_vars(state)
     dudt, dwdt, dhdt, dsdt, dqdt, *_ = solver.get_vars(dstatedt)
 
-    # internal cooling
-    T_forcing = -cooling_rate * solver.zs / solver.zs.max() # constantly cool at a rate of 1K per day
-    s_forcing = T_forcing * solver.cvd / T # convert temperature forcing to entropy forcing
+    max_E_forcing = 10.0 # Watts / m^3
+    E_forcing = -max_E_forcing * 2 * ((solver.zs / solver.zs.max()) - 0.5)
 
-    # boundary forcing at bottom - force bottom temperature  towards SST
-    bottom_bdry_idx = solver.ip_vert_ext
-    s_forcing[bottom_bdry_idx] = 0.0
-    T_forcing = -(T[bottom_bdry_idx] - SST) / 60 # 1 mins relaxation time
-    s_forcing[bottom_bdry_idx] += T_forcing * solver.cvd / T[bottom_bdry_idx]
+    dEds = h * T
+    # dEdt = dEds * dsdt =
+    s_forcing = E_forcing / dEds
 
     dsdt += s_forcing
+
+
+def energy_growth_from_forcing(solver):
+
+    if solver.forcing is not None:
+        state = solver.state
+
+        dstatedt = np.zeros_like(state)
+        solver.forcing(solver, state, dstatedt)
+
+        u, w, h, s, q, T, mu, p, ie = solver.get_vars(state)
+        u, w = solver.cov_to_phy(u, w)
+        enthalpy = (ie + p) / h
+
+        dudt, dwdt, dhdt, dsdt, dqdt, *_ = solver.get_vars(dstatedt)
+        dudt, dwdt = solver.cov_to_phy(dudt, dwdt)
+
+        dEdu = h * u
+        dEdw = h * w
+        dEdh = 0.5 * (u ** 2 + w ** 2) + enthalpy + solver.g * solver.zs
+        dEds = h * T
+        dEdq = h * mu
+
+        dEdt = dEdu * dudt + dEdw * dwdt + dEdh * dhdt + dEds * dsdt + dEdq * dqdt
+        dEdt = solver.integrate(dEdt)
+
+    else:
+        dEdt = 0.0
+
+    return dEdt
 
 
 # total run time
@@ -120,7 +145,7 @@ energy_list = []
 conservation_data_fp = os.path.join(data_dir, 'conservation_data.npy')
 
 if run_model:
-    solver = FortranThreePhaseEuler2D(xmap, zmap, poly_order, nx, g=g, cfl=0.5, a=a, nz=nz, upwind=upwind, nprocx=nproc, forcing=cooling_and_sst_forcing)
+    solver = FortranThreePhaseEuler2D(xmap, zmap, poly_order, nx, g=g, cfl=0.5, a=a, nz=nz, upwind=upwind, nprocx=nproc, forcing=energy_forcing)
     u, v, density, s, qw = initial_condition(solver)
 
     np.random.seed(42 + rank)
@@ -128,11 +153,15 @@ if run_model:
     density += 0.01 * density * noise
     solver.set_initial_condition(u, v, density, s, qw)
 
+    dEdt_forcing = 0.0
 
     for i, tend in enumerate(tends):
         t0 = time.time()
         while solver.time < tend:
             dt = solver.get_dt()
+            dEdt_incr = energy_growth_from_forcing(solver)
+            if rank == 0:
+                dEdt_forcing += dEdt_incr * dt
 
             time_list.append(solver.time)
             energy_list.append(solver.energy())
