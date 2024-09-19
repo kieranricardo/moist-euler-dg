@@ -12,7 +12,7 @@ import matplotlib.ticker as ticker
 # test case parameters
 domain_width = 10_000 # width of domain in metres
 domain_height = 10_000 # height of domain in metres
-run_time = 9000 # total run time in seconds
+run_time = 10_000 # total run time in seconds
 
 p_surface = 1_00_000.0 # surface pressure in Pa
 SST = 300.0 # sea surface temperature in Kelvin
@@ -54,11 +54,13 @@ exp_name_short = 'forced-convection'
 experiment_name = f'{exp_name_short}-nx-{nx}-nz-{nz}-p{poly_order}'
 data_dir = os.path.join('data', experiment_name)
 plot_dir = os.path.join('plots', experiment_name)
+data_dump_dir = os.path.join(plot_dir, 'data-dump')
 
 if rank == 0:
     print(f"---------- {exp_name_short} with nx={nx}, nz={nz}")
     if not os.path.exists(plot_dir): os.makedirs(plot_dir)
     if not os.path.exists(data_dir): os.makedirs(data_dir)
+    if not os.path.exists(data_dump_dir): os.makedirs(data_dump_dir)
 
 comm.barrier()
 
@@ -134,7 +136,8 @@ def diffusive_forcing(solver, state, dstatedt):
 
 
 # save data at these times
-tends = np.array([0.0, (1 / 3), (2 / 3), 1.0]) * run_time
+n = int(run_time / 50)
+tends = np.arange(n + 1) * run_time / n
 
 time_list = []
 energy_list = []
@@ -159,6 +162,7 @@ if run_model:
         t0 = time.time()
         while solver.time < tend:
             dt = solver.get_dt()
+            dt = min(dt, tend - solver.time)
 
             time_list.append(solver.time)
             energy_list.append(solver.energy())
@@ -216,42 +220,56 @@ elif rank == 0:
     ]
 
     labels = ["entropy", "density", "water", "vapour", "liquid", "ice", "u", "w", "T"]
-
-
-    fig_list = [plt.subplots(2, 2, sharex=True, sharey=True) for _ in range(len(labels))]
+    data_dict = dict((label, []) for label in labels)
 
     for i, tend in enumerate(tends):
         filepaths = [solver_plot.get_filepath(data_dir, exp_name_short, proc=i, nprocx=nproc, time=tend) for i in range(nproc)]
         solver_plot.load(filepaths)
 
-        print("Bottom layer temp range:", solver_plot.T[:, 0, :, 0].min(), solver_plot.T[:, 0, :, 0].max())
-        print("Bottom cell temp range:", solver_plot.T[:, 0].min(), solver_plot.T[:, 0].max(), "\n")
+        for label, pfunc in zip(labels, pfunc_list):
+            data_dict[label].append(pfunc(solver_plot))
 
-        for (fig, axs), plot_fun in zip(fig_list, pfunc_list):
-            ax = axs[i // 2][i % 2]
-            ax.tick_params(labelsize=8)
-            im = solver_plot.plot_solution(ax, dim=2, plot_func=plot_fun)
-            cbar = plt.colorbar(im, ax=ax, format=ticker.FuncFormatter(fmt))
-            cbar.ax.tick_params(labelsize=8)
-            plt.tight_layout()
-
-    for (fig, ax), label in zip(fig_list, labels):
+    
+    for label in labels:
         plot_name = f'{label}_{exp_name_short}'
-        fp = solver_plot.get_filepath(plot_dir, plot_name, ext='png')
-        fig.savefig(fp, bbox_inches="tight")
+        fp = solver_plot.get_filepath(data_dump_dir, plot_name, ext='npy')
+        print(f'Saving {label} to {fp}.')
 
-    conservation_data = np.load(conservation_data_fp)
-    time_list = conservation_data[0, :]
-    energy_list = conservation_data[1, :]
+        arr = np.stack(data_dict[label], axis=0)
+        print('Shape:', arr.shape)
+        print('Range:', arr.min(), arr.max(), '\n')
+        np.save(fp, arr)
 
-    energy_list = (energy_list - energy_list[0]) / energy_list[0]
+    
+    label = 'xcoord'
+    plot_name = f'{label}_{exp_name_short}'
+    fp = solver_plot.get_filepath(data_dump_dir, plot_name, ext='npy')
+    print(f'Saving {label} to {fp}.')
 
-    print('Energy error:', energy_list[-1])
+    arr = solver_plot.xs
+    print('Shape:', arr.shape)
+    print('Range:', arr.min(), arr.max(), '\n')
+    np.save(fp, arr)
 
-    plt.figure()
-    plt.plot(time_list, energy_list, label='Energy')
-    plt.grid()
-    plt.legend()
-    # plt.yscale('symlog', linthresh=1e-15)
-    fp = os.path.join(plot_dir, f'conservation_{exp_name_short}')
-    plt.savefig(fp, bbox_inches="tight")
+    label = 'zcoord'
+    plot_name = f'{label}_{exp_name_short}'
+    fp = solver_plot.get_filepath(data_dump_dir, plot_name, ext='npy')
+    print(f'Saving {label} to {fp}.')
+
+    arr = solver_plot.zs
+    print('Shape:', arr.shape)
+    print('Range:', arr.min(), arr.max(), '\n')
+    np.save(fp, arr)
+
+    label = 'tcoord'
+    plot_name = f'{label}_{exp_name_short}'
+    fp = solver_plot.get_filepath(data_dump_dir, plot_name, ext='npy')
+    print(f'Saving {label} to {fp}.')
+
+    arr = tends
+    print('Shape:', arr.shape)
+    print('Range:', arr.min(), arr.max(), '\n')
+    np.save(fp, arr)
+
+    
+        
