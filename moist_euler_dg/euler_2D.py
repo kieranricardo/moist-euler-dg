@@ -655,6 +655,10 @@ class Euler2D():
     def ddzeta(self, arr):
         return np.einsum('ab,ecdb->ecda', self.D, arr)
 
+    def ddz(self, arr):
+
+        return (self.ddzeta(arr) * self.dzetadz) + (self.ddxi(arr) * self.dxidz)
+
     def project_H1(self, arr_in, arr_out=None):
         if arr_out is None:
             arr_out = np.empty_like(arr_in)

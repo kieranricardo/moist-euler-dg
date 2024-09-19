@@ -85,6 +85,37 @@ class TwoPhaseEuler2D(Euler2D):
 
         self.time += dt
 
+    def forcing_only_time_step(self, dt=None):
+
+        if dt is None:
+            dt = self.get_dt()
+
+        k = self.private_working_arrays[1]
+        u_tmp = self.private_working_arrays[2]
+
+        if self.forcing is not None:
+            k[:] = 0.0
+            self.forcing(self, self.state, k)
+
+        u_tmp[:] = self.state + 0.5 * dt * k
+        if self.forcing is not None:
+            k[:] = 0.0
+            self.forcing(self, u_tmp, k)
+
+        u_tmp[:] = u_tmp[:] + 0.5 * dt * k
+        if self.forcing is not None:
+            k[:] = 0.0
+            self.forcing(self, u_tmp, k)
+
+        u_tmp[:] = (2 / 3) * self.state + (1 / 3) * u_tmp[:] + (1 / 6) * dt * k
+        if self.forcing is not None:
+            k[:] = 0.0
+            self.forcing(self, u_tmp, k)
+
+        self.state[:] = u_tmp + 0.5 * dt * k
+
+        self.time += dt
+
     def positivity_preserving_limiter(self, in_tnsr):
         cell_means = (in_tnsr * self.weights2D[None, None] * self.J).sum(axis=(2, 3)) / (self.weights2D[None, None] * self.J).sum(axis=(2, 3))
         cell_diffs = in_tnsr - cell_means[..., None, None]

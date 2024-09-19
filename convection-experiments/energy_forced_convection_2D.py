@@ -94,7 +94,7 @@ def energy_forcing(solver, state, dstatedt):
     u, w, h, s, q, T, mu, p, ie = solver.get_vars(state)
     dudt, dwdt, dhdt, dsdt, dqdt, *_ = solver.get_vars(dstatedt)
 
-    max_E_forcing = 10.0 # Watts / m^3
+    max_E_forcing = 1.0 # Watts / m^3
     E_forcing = -max_E_forcing * 2 * ((solver.zs / solver.zs.max()) - 0.5)
 
     dEds = h * T

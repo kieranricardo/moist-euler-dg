@@ -16,8 +16,9 @@ domain_height = 10_000 # height of domain in metres
 p_surface = 1_00_000.0 # surface pressure in Pa
 SST = 300.0 # sea surface temperature in Kelvin
 
-cooling_rate = 10.0 / (3600 * 24) # cools 10 K per day
-
+cooling_rate = 20.0 / (3600 * 24) # cools 10 K per day
+boundary_layer_top = 1250.0 # height of boundary layer - diffusion applied within boundary layer
+Ksurf = 10.0 # diffusivity at surface - quadratically decreases to 0 at boundary_layer_top
 
 comm = MPI.COMM_WORLD
 rank = comm.Get_rank()
@@ -90,23 +91,39 @@ def initial_condition(solver):
     return u, w, density, s, qw
 
 
-# forcing - this adds uniform cooling to air
-# and forces the bottom temperature to match the SST
-def cooling_and_sst_forcing(solver, state, dstatedt):
+def diffusive_forcing(solver, state, dstatedt):
     u, w, h, s, q, T, mu, p, ie = solver.get_vars(state)
     dudt, dwdt, dhdt, dsdt, dqdt, *_ = solver.get_vars(dstatedt)
 
     # internal cooling
-    T_forcing = -cooling_rate * solver.zs / solver.zs.max() # constantly cool at a rate of 1K per day
-    s_forcing = T_forcing * solver.cvd / T # convert temperature forcing to entropy forcing
+    y = (solver.zs - boundary_layer_top) / (solver.zs.max() - boundary_layer_top)
+    T_forcing = -cooling_rate * y**2 * (solver.zs >= boundary_layer_top)  # constantly cool at a rate of 1K per day
+    s_forcing = T_forcing * solver.cvd / T  # convert temperature forcing to entropy forcing
 
-    # boundary forcing at bottom - force bottom temperature  towards SST
-    bottom_bdry_idx = solver.ip_vert_ext
-    s_forcing[bottom_bdry_idx] = 0.0
-    T_forcing = -(T[bottom_bdry_idx] - SST) / 60 # 1 mins relaxation time
-    s_forcing[bottom_bdry_idx] += T_forcing * solver.cvd / T[bottom_bdry_idx]
+    # forcing in boundary layer
+    K = Ksurf * (1.0 - (solver.zs / boundary_layer_top)) ** 2 * (solver.zs <= boundary_layer_top)
+
+    def ddz(arr):
+        out = solver.ddz(arr)
+
+        ip = solver.ip_vert_int
+        im = solver.im_vert_int
+
+        num_flux = 0.5 * (arr[ip] + arr[im])
+        out[ip] += (num_flux - arr[ip]) * solver.norm_grad_zeta[ip] / solver.weights_z[-1]
+        out[im] -= (num_flux - arr[im]) * solver.norm_grad_zeta[im] / solver.weights_z[-1]
+
+        return out
+
+    F = ddz(T)  # diffusive flux
+    # bottom boundary condition
+    ip = solver.ip_vert_ext
+    F[ip] += (SST - T[ip]) * solver.norm_grad_zeta[ip] / solver.weights_z[-1]
+    T_forcing = -ddz(K * F)
+    s_forcing += T_forcing * solver.cvd / T
 
     dsdt += s_forcing
+
 
 
 # total run time
@@ -120,14 +137,19 @@ energy_list = []
 conservation_data_fp = os.path.join(data_dir, 'conservation_data.npy')
 
 if run_model:
-    solver = FortranThreePhaseEuler2D(xmap, zmap, poly_order, nx, g=g, cfl=0.5, a=a, nz=nz, upwind=upwind, nprocx=nproc, forcing=cooling_and_sst_forcing)
+    solver = FortranThreePhaseEuler2D(xmap, zmap, poly_order, nx, g=g, cfl=0.5, a=a, nz=nz, upwind=upwind, nprocx=nproc, forcing=diffusive_forcing)
     u, v, density, s, qw = initial_condition(solver)
+
+    s0 = np.copy(s[solver.ip_vert_ext])
+    s1 = np.copy(s[solver.im_vert_ext])
 
     np.random.seed(42 + rank)
     noise = 2 * (np.random.random(density.shape) - 0.5)
     density += 0.01 * density * noise
     solver.set_initial_condition(u, v, density, s, qw)
 
+    time_list.append(solver.time)
+    energy_list.append(solver.energy())
 
     for i, tend in enumerate(tends):
         t0 = time.time()
@@ -141,7 +163,9 @@ if run_model:
         t1 = time.time()
 
         if rank == 0:
+            print('s bot range:', solver.s[solver.ip_vert_ext].min(), solver.s[solver.ip_vert_ext].max())
             print("Simulation time (unit less):", solver.time)
+            print('Relative energy change:', (energy_list[-1] - energy_list[0]) / energy_list[0])
             print("Wall time:", time.time() - t0, '\n')
 
         solver.save(solver.get_filepath(data_dir, exp_name_short))
@@ -179,22 +203,25 @@ elif rank == 0:
     plot_func_ice = lambda s: s.project_H1(s.solve_fractions_from_entropy(s.h, s.q, s.s)[2])
     plot_func_u = lambda s: s.project_H1(s.u)
     plot_func_w = lambda s: s.project_H1(s.w)
+    plot_func_T = lambda s: s.project_H1(s.T)
 
     pfunc_list = [
         plot_func_entropy, plot_func_density,
         plot_func_water, plot_func_vapour, plot_func_liquid, plot_func_ice,
-        plot_func_u, plot_func_w
+        plot_func_u, plot_func_w, plot_func_T
     ]
 
-    labels = ["entropy", "density", "water", "vapour", "liquid", "ice", "u", "w"]
+    labels = ["entropy", "density", "water", "vapour", "liquid", "ice", "u", "w", "T"]
+
 
     fig_list = [plt.subplots(2, 2, sharex=True, sharey=True) for _ in range(len(labels))]
 
-    energy = []
     for i, tend in enumerate(tends):
         filepaths = [solver_plot.get_filepath(data_dir, exp_name_short, proc=i, nprocx=nproc, time=tend) for i in range(nproc)]
         solver_plot.load(filepaths)
-        energy.append(solver_plot.integrate(solver_plot.energy()))
+
+        print("Bottom layer temp range:", solver_plot.T[:, 0, :, 0].min(), solver_plot.T[:, 0, :, 0].max())
+        print("Bottom cell temp range:", solver_plot.T[:, 0].min(), solver_plot.T[:, 0].max(), "\n")
 
         for (fig, axs), plot_fun in zip(fig_list, pfunc_list):
             ax = axs[i // 2][i % 2]
