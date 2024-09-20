@@ -359,8 +359,7 @@ else:
     labels = ["entropy", "density", "water", "vapour", "ice",  "T", "u", "w"]
 
     if size > 1:
-        assert size == len(labels)
-        labels = labels[rank:rank+1]
+        labels = [labels[i] for i in range(rank, len(labels), size)]
 
     print(f'Rank {rank} running {labels}')
 
@@ -376,69 +375,6 @@ else:
         _make_movie(label, data)
         print(f'Time: {time.time() - t0}s')
         break
-
-    # plt.rcParams['font.size'] = '12'
-
-    # #
-    # solver_plot = ThreePhaseEuler2D(xmap, zmap, poly_order, nx, g=g, cfl=0.5, a=a, nz=nz, upwind=upwind, nprocx=1)
-    # # base state of the initial condition (excludes bubble perturbation)
-    # _, _, h0, s0, qw0 = initial_condition(solver_plot)
-    # qv0, ql0, qi0 = solver_plot.solve_fractions_from_entropy(h0, qw0, s0)
-
-    # def fmt(x, pos):
-    #     a, b = '{:.2e}'.format(x).split('e')
-    #     b = int(b)
-    #     return r'${} \times 10^{{{}}}$'.format(a, b)
-
-    # data_dict = dict((label, []) for label in labels)
-    # for i, tend in enumerate(tends):
-    #     filepaths = [solver_plot.get_filepath(data_dir, exp_name_short, proc=i, nprocx=nproc, time=tend) for i in range(nproc)]
-    #     solver_plot.load(filepaths)
-
-    #     for label, pfunc in zip(labels, pfunc_list):
-    #         data_dict[label].append(pfunc(solver_plot))
-
-    
-    # for label in labels:
-    #     plot_name = f'{label}_{exp_name_short}'
-    #     fp = solver_plot.get_filepath(data_dump_dir, plot_name, ext='npy')
-    #     print(f'Saving {label} to {fp}.')
-
-    #     arr = np.stack(data_dict[label], axis=0)
-    #     print('Shape:', arr.shape)
-    #     print('Range:', arr.min(), arr.max(), '\n')
-    #     np.save(fp, arr)
-
-    
-    # label = 'xcoord'
-    # plot_name = f'{label}_{exp_name_short}'
-    # fp = solver_plot.get_filepath(data_dump_dir, plot_name, ext='npy')
-    # print(f'Saving {label} to {fp}.')
-
-    # arr = solver_plot.xs
-    # print('Shape:', arr.shape)
-    # print('Range:', arr.min(), arr.max(), '\n')
-    # np.save(fp, arr)
-
-    # label = 'zcoord'
-    # plot_name = f'{label}_{exp_name_short}'
-    # fp = solver_plot.get_filepath(data_dump_dir, plot_name, ext='npy')
-    # print(f'Saving {label} to {fp}.')
-
-    # arr = solver_plot.zs
-    # print('Shape:', arr.shape)
-    # print('Range:', arr.min(), arr.max(), '\n')
-    # np.save(fp, arr)
-
-    # label = 'tcoord'
-    # plot_name = f'{label}_{exp_name_short}'
-    # fp = solver_plot.get_filepath(data_dump_dir, plot_name, ext='npy')
-    # print(f'Saving {label} to {fp}.')
-
-    # arr = tends
-    # print('Shape:', arr.shape)
-    # print('Range:', arr.min(), arr.max(), '\n')
-    # np.save(fp, arr)
 
     
         
