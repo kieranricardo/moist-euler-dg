@@ -124,7 +124,7 @@ class TwoPhaseEuler2D(Euler2D):
         cell_mins = cell_mins.min(axis=-1)
         diff_min = cell_mins - cell_means
 
-        new_min = np.maximum(1e-7 + 0 * cell_mins, cell_mins)
+        new_min = np.maximum(1e-12 + 0 * cell_mins, cell_mins)
         scale = (new_min - cell_means) / diff_min
 
         out_tnsr = cell_means[..., None, None] + scale[..., None, None] * cell_diffs
@@ -160,6 +160,7 @@ class TwoPhaseEuler2D(Euler2D):
         if (qw <= 0).any():
             print("Negative water mass - limiting failed :( ")
             print('hqw_limited min:', hqw_limited.min())
+            print('h min:', h.min())
             raise RuntimeError("Negative water mass - limiting failed :( ")
             # print("x-coords:", self.xs[state['hqw'] <= 0], "\n")
             # print("y-coords:", self.ys[state['hqw'] <= 0], "\n")

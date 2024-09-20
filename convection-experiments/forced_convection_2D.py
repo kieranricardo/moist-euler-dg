@@ -12,7 +12,7 @@ import matplotlib.ticker as ticker
 # test case parameters
 domain_width = 10_000 # width of domain in metres
 domain_height = 10_000 # height of domain in metres
-run_time = 9000 # total run time in seconds
+run_time = 3000 # total run time in seconds
 
 p_surface = 1_00_000.0 # surface pressure in Pa
 SST = 300.0 # sea surface temperature in Kelvin
@@ -73,15 +73,69 @@ def neutrally_stable_dry_profile(solver):
     return density, p
 
 
+def stable_dry_profile(solver):
+
+    # set hydrostatic pressure/density profile
+    TE = 310.0
+    TP = 240.0
+    GRAVITY = solver.g
+    T0 = 0.5 * (TE + TP)
+    b = 2.0
+    KP = 3.0
+    GAMMA = 0.01 # lapse rate
+    P0 = 100000
+    RD = solver.Rd
+
+    ys = solver.zs
+
+    A = 1.0 / GAMMA
+    B = (TE - TP) / ((TE + TP) * TP)
+    C = 0.5 * (KP + 2.0) * (TE - TP) / (TE * TP)
+    H = RD * T0 / GRAVITY
+
+    fac = ys / (b * H)
+    fac2 = fac * fac
+    cp = np.cos(2.0 * np.pi / 9.0)
+    cpk = np.power(cp, KP)
+    cpkp2 = np.power(cp, KP + 2)
+    fac3 = cpk - (KP / (KP + 2.0)) * cpkp2
+
+    torr_1 = (A * GAMMA / T0) * np.exp(GAMMA * (ys) / T0) + B * (1.0 - 2.0 * fac2) * np.exp(-fac2)
+    torr_2 = C * (1.0 - 2.0 * fac2) * np.exp(-fac2)
+
+    int_torr_1 = A * (np.exp(GAMMA * ys / T0) - 1.0) + B * ys * np.exp(-fac2)
+    int_torr_2 = C * ys * np.exp(-fac2)
+
+    tempInv = torr_1 - torr_2 * fac3
+    T = 1.0 / tempInv
+    p = P0 * np.exp(-GRAVITY * int_torr_1 / RD + GRAVITY * int_torr_2 * fac3 / RD)
+    density = p / (solver.Rd * T)
+
+    return density, p
+
 def initial_condition(solver):
     # initial wind is zero
     u = np.zeros_like(solver.xs)
     w = np.zeros_like(solver.xs)
 
-    density, p = neutrally_stable_dry_profile(solver)
+    # density, p = neutrally_stable_dry_profile(solver)
+    density, p = stable_dry_profile(solver)
 
-    # add arbitrary moisute profile
-    qw = solver.rh_to_qw(0.95, p, density)  # choose 95% relative humidity
+    # add arbitrary moisture profile
+
+    qw_sfc = solver.rh_to_qw(0.95, p[0, 0, 0, 0], density[0, 0, 0, 0])
+    # qw = qw_sfc * np.exp(-solver.zs / 1000)
+
+    # rh = np.zeros_like(density)
+    # rh[solver.zs <= boundary_layer_top] = 0.95
+    #
+    # tmp = np.exp(-(solver.zs - boundary_layer_top) / 1000)[solver.zs > boundary_layer_top]
+    # rh[solver.zs > boundary_layer_top] = 0.95 * tmp
+    #
+    rh = 0.95 + (1 - np.exp(-(solver.zs / 500)**2)) * (0.01 - 0.95)
+    qw = solver.rh_to_qw(rh, p, density)
+    # qw = 1e-6
+    # qw[solver.zs <= boundary_layer_top]
 
     # model must be initialized with entropy not temperature
     # so convert density, pressure, qw profile to a density, entropy, qw profile
@@ -101,6 +155,7 @@ def diffusive_forcing(solver, state, dstatedt):
     T_forcing = -cooling_rate * y**2 * (solver.zs >= boundary_layer_top)  # constantly cool at a rate of 1K per day
     s_forcing = T_forcing * solver.cvd / T  # convert temperature forcing to entropy forcing
 
+    # forcing in boundary layer
     # forcing in boundary layer
     K = Ksurf * (1.0 - (solver.zs / boundary_layer_top)) ** 2 * (solver.zs <= boundary_layer_top)
 
@@ -151,6 +206,16 @@ if run_model:
     noise = 2 * (np.random.random(density.shape) - 0.5)
     density += 0.01 * density * noise
     solver.set_initial_condition(u, v, density, s, qw)
+
+    # print('T range:', solver.T.min(), solver.T.max())
+    # print('p range:', solver.p.min(), solver.p.max())
+    # print('rho range:', solver.h.min(), solver.h.max())
+    # print('q range:', solver.q.min(), solver.q.max())
+    #
+    # plt.tricontourf(solver.xs.ravel(), solver.zs.ravel(), solver.s.ravel(), levels=1000, cmap='nipy_spectral')
+    # plt.colorbar()
+    # plt.show()
+    # exit(0)
 
     time_list.append(solver.time)
     energy_list.append(solver.energy())
