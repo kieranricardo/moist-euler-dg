@@ -82,7 +82,7 @@ def stable_dry_profile(solver):
     T0 = 0.5 * (TE + TP)
     b = 2.0
     KP = 3.0
-    GAMMA = 0.01 # lapse rate
+    GAMMA = 0.009 # lapse rate
     P0 = 100000
     RD = solver.Rd
 
@@ -132,9 +132,10 @@ def initial_condition(solver):
     # tmp = np.exp(-(solver.zs - boundary_layer_top) / 1000)[solver.zs > boundary_layer_top]
     # rh[solver.zs > boundary_layer_top] = 0.95 * tmp
     #
-    rh = 0.95 + (1 - np.exp(-(solver.zs / 500)**2)) * (0.01 - 0.95)
+    rh = 0.95 + (1 - np.exp(-(solver.zs / 250)**2)) * (0.01 - 0.95)
+    # rh = 0.0001
     qw = solver.rh_to_qw(rh, p, density)
-    # qw = 1e-6
+    # qw = 1e-12
     # qw[solver.zs <= boundary_layer_top]
 
     # model must be initialized with entropy not temperature
