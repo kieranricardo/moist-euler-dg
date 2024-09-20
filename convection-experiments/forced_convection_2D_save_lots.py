@@ -12,7 +12,7 @@ import matplotlib.ticker as ticker
 # test case parameters
 domain_width = 10_000 # width of domain in metres
 domain_height = 10_000 # height of domain in metres
-run_time = 10_000 # total run time in seconds
+run_time = 9000 # total run time in seconds
 
 p_surface = 1_00_000.0 # surface pressure in Pa
 SST = 300.0 # sea surface temperature in Kelvin
@@ -52,15 +52,18 @@ upwind = True
 # experiment name - change this for new experiments!
 exp_name_short = 'forced-convection'
 experiment_name = f'{exp_name_short}-nx-{nx}-nz-{nz}-p{poly_order}'
+
 data_dir = os.path.join('data', experiment_name)
 plot_dir = os.path.join('plots', experiment_name)
 data_dump_dir = os.path.join(plot_dir, 'data-dump')
+movie_dir = os.path.join(plot_dir, 'movies')
 
 if rank == 0:
     print(f"---------- {exp_name_short} with nx={nx}, nz={nz}")
     if not os.path.exists(plot_dir): os.makedirs(plot_dir)
     if not os.path.exists(data_dir): os.makedirs(data_dir)
     if not os.path.exists(data_dump_dir): os.makedirs(data_dump_dir)
+    if not os.path.exists(movie_dir): os.makedirs(movie_dir)
 
 comm.barrier()
 
@@ -75,15 +78,70 @@ def neutrally_stable_dry_profile(solver):
     return density, p
 
 
+def stable_dry_profile(solver):
+
+    # set hydrostatic pressure/density profile
+    TE = 310.0
+    TP = 240.0
+    GRAVITY = solver.g
+    T0 = 0.5 * (TE + TP)
+    b = 2.0
+    KP = 3.0
+    GAMMA = 0.009 # lapse rate
+    P0 = 100000
+    RD = solver.Rd
+
+    ys = solver.zs
+
+    A = 1.0 / GAMMA
+    B = (TE - TP) / ((TE + TP) * TP)
+    C = 0.5 * (KP + 2.0) * (TE - TP) / (TE * TP)
+    H = RD * T0 / GRAVITY
+
+    fac = ys / (b * H)
+    fac2 = fac * fac
+    cp = np.cos(2.0 * np.pi / 9.0)
+    cpk = np.power(cp, KP)
+    cpkp2 = np.power(cp, KP + 2)
+    fac3 = cpk - (KP / (KP + 2.0)) * cpkp2
+
+    torr_1 = (A * GAMMA / T0) * np.exp(GAMMA * (ys) / T0) + B * (1.0 - 2.0 * fac2) * np.exp(-fac2)
+    torr_2 = C * (1.0 - 2.0 * fac2) * np.exp(-fac2)
+
+    int_torr_1 = A * (np.exp(GAMMA * ys / T0) - 1.0) + B * ys * np.exp(-fac2)
+    int_torr_2 = C * ys * np.exp(-fac2)
+
+    tempInv = torr_1 - torr_2 * fac3
+    T = 1.0 / tempInv
+    p = P0 * np.exp(-GRAVITY * int_torr_1 / RD + GRAVITY * int_torr_2 * fac3 / RD)
+    density = p / (solver.Rd * T)
+
+    return density, p
+
 def initial_condition(solver):
     # initial wind is zero
     u = np.zeros_like(solver.xs)
     w = np.zeros_like(solver.xs)
 
-    density, p = neutrally_stable_dry_profile(solver)
+    # density, p = neutrally_stable_dry_profile(solver)
+    density, p = stable_dry_profile(solver)
 
-    # add arbitrary moisute profile
-    qw = solver.rh_to_qw(0.95, p, density)  # choose 95% relative humidity
+    # add arbitrary moisture profile
+
+    qw_sfc = solver.rh_to_qw(0.95, p[0, 0, 0, 0], density[0, 0, 0, 0])
+    # qw = qw_sfc * np.exp(-solver.zs / 1000)
+
+    # rh = np.zeros_like(density)
+    # rh[solver.zs <= boundary_layer_top] = 0.95
+    #
+    # tmp = np.exp(-(solver.zs - boundary_layer_top) / 1000)[solver.zs > boundary_layer_top]
+    # rh[solver.zs > boundary_layer_top] = 0.95 * tmp
+    #
+    rh = 0.95 + (1 - np.exp(-(solver.zs / 250)**2)) * (0.01 - 0.95)
+    # rh = 0.0001
+    qw = solver.rh_to_qw(rh, p, density)
+    # qw = 1e-12
+    # qw[solver.zs <= boundary_layer_top]
 
     # model must be initialized with entropy not temperature
     # so convert density, pressure, qw profile to a density, entropy, qw profile
@@ -103,6 +161,7 @@ def diffusive_forcing(solver, state, dstatedt):
     T_forcing = -cooling_rate * y**2 * (solver.zs >= boundary_layer_top)  # constantly cool at a rate of 1K per day
     s_forcing = T_forcing * solver.cvd / T  # convert temperature forcing to entropy forcing
 
+    # forcing in boundary layer
     # forcing in boundary layer
     K = Ksurf * (1.0 - (solver.zs / boundary_layer_top)) ** 2 * (solver.zs <= boundary_layer_top)
 
@@ -133,17 +192,35 @@ def diffusive_forcing(solver, state, dstatedt):
 
     dsdt += s_forcing
 
-
-
 # save data at these times
-n = int(run_time / 50)
+n = int(run_time / 5)
 tends = np.arange(n + 1) * run_time / n
 
 time_list = []
 energy_list = []
 conservation_data_fp = os.path.join(data_dir, 'conservation_data.npy')
 
+plot_func_entropy = lambda s: s.s
+plot_func_density = lambda s: s.h
+plot_func_water = lambda s: s.q
+plot_func_vapour = lambda s: s.solve_fractions_from_entropy(s.h, s.q, s.s)[0]
+plot_func_liquid = lambda s: s.solve_fractions_from_entropy(s.h, s.q, s.s)[1]
+plot_func_ice = lambda s: s.solve_fractions_from_entropy(s.h, s.q, s.s)[2]
+plot_func_u = lambda s: s.u
+plot_func_w = lambda s: s.w
+plot_func_T = lambda s: s.T
+
+pfunc_list = [
+    plot_func_entropy, plot_func_density,
+    plot_func_water, plot_func_vapour, plot_func_liquid, plot_func_ice,
+    plot_func_u, plot_func_w, plot_func_T
+]
+
+labels = ["entropy", "density", "water", "vapour", "liquid", "ice", "u", "w", "T"]
+
+
 if run_model:
+    
     solver = FortranThreePhaseEuler2D(xmap, zmap, poly_order, nx, g=g, cfl=0.5, a=a, nz=nz, upwind=upwind, nprocx=nproc, forcing=diffusive_forcing)
     u, v, density, s, qw = initial_condition(solver)
 
@@ -158,7 +235,11 @@ if run_model:
     time_list.append(solver.time)
     energy_list.append(solver.energy())
 
+    shape = (len(tends),) + solver.xs.shape
+    data_dict = dict((label, np.zeros(shape)) for label in labels)
+
     for i, tend in enumerate(tends):
+        
         t0 = time.time()
         while solver.time < tend:
             dt = solver.get_dt()
@@ -170,106 +251,194 @@ if run_model:
 
         t1 = time.time()
 
+        for label, pfunc in zip(labels, pfunc_list):
+            
+            data_dict[label][i, :] = pfunc(solver)
+
         if rank == 0:
             print('s bot range:', solver.s[solver.ip_vert_ext].min(), solver.s[solver.ip_vert_ext].max())
             print("Simulation time (unit less):", solver.time)
             print('Relative energy change:', (energy_list[-1] - energy_list[0]) / energy_list[0])
             print("Wall time:", time.time() - t0, '\n')
 
-        solver.save(solver.get_filepath(data_dir, exp_name_short))
+        # solver.save(solver.get_filepath(data_dir, exp_name_short))
+        
 
     if rank == 0:
-        print('Relative energy change:', (energy_list[-1] - energy_list[0]) / energy_list[0])
-        print("Bottom temp range:", solver.T[:, 0, :, 0].min(), solver.T[:, 0, :, 0].max())
-
         conservation_data = np.zeros((2, len(time_list)))
         conservation_data[0, :] = np.array(time_list)
         conservation_data[1, :] = np.array(energy_list)
 
         np.save(conservation_data_fp, conservation_data)
 
-# plotting
-elif rank == 0:
-    plt.rcParams['font.size'] = '12'
-
-    #
-    solver_plot = ThreePhaseEuler2D(xmap, zmap, poly_order, nx, g=g, cfl=0.5, a=a, nz=nz, upwind=upwind, nprocx=1)
-    # base state of the initial condition (excludes bubble perturbation)
-    _, _, h0, s0, qw0 = initial_condition(solver_plot)
-    qv0, ql0, qi0 = solver_plot.solve_fractions_from_entropy(h0, qw0, s0)
-
-    def fmt(x, pos):
-        a, b = '{:.2e}'.format(x).split('e')
-        b = int(b)
-        return r'${} \times 10^{{{}}}$'.format(a, b)
-
-    plot_func_entropy = lambda s: s.project_H1(s.s)
-    plot_func_density = lambda s: s.project_H1(s.h)
-    plot_func_water = lambda s: s.project_H1(s.q)
-    plot_func_vapour = lambda s: s.project_H1(s.solve_fractions_from_entropy(s.h, s.q, s.s)[0])
-    plot_func_liquid = lambda s: s.project_H1(s.solve_fractions_from_entropy(s.h, s.q, s.s)[1])
-    plot_func_ice = lambda s: s.project_H1(s.solve_fractions_from_entropy(s.h, s.q, s.s)[2])
-    plot_func_u = lambda s: s.project_H1(s.u)
-    plot_func_w = lambda s: s.project_H1(s.w)
-    plot_func_T = lambda s: s.project_H1(s.T)
-
-    pfunc_list = [
-        plot_func_entropy, plot_func_density,
-        plot_func_water, plot_func_vapour, plot_func_liquid, plot_func_ice,
-        plot_func_u, plot_func_w, plot_func_T
-    ]
-
-    labels = ["entropy", "density", "water", "vapour", "liquid", "ice", "u", "w", "T"]
-    data_dict = dict((label, []) for label in labels)
-
-    for i, tend in enumerate(tends):
-        filepaths = [solver_plot.get_filepath(data_dir, exp_name_short, proc=i, nprocx=nproc, time=tend) for i in range(nproc)]
-        solver_plot.load(filepaths)
-
-        for label, pfunc in zip(labels, pfunc_list):
-            data_dict[label].append(pfunc(solver_plot))
-
-    
-    for label in labels:
-        plot_name = f'{label}_{exp_name_short}'
-        fp = solver_plot.get_filepath(data_dump_dir, plot_name, ext='npy')
-        print(f'Saving {label} to {fp}.')
-
-        arr = np.stack(data_dict[label], axis=0)
-        print('Shape:', arr.shape)
-        print('Range:', arr.min(), arr.max(), '\n')
+    for label, arr in data_dict.items():
+        fp = os.path.join(data_dump_dir, f"{label}_part_{rank}_of_{size}.npy")
+        print(fp)
         np.save(fp, arr)
 
-    
     label = 'xcoord'
-    plot_name = f'{label}_{exp_name_short}'
-    fp = solver_plot.get_filepath(data_dump_dir, plot_name, ext='npy')
-    print(f'Saving {label} to {fp}.')
-
-    arr = solver_plot.xs
-    print('Shape:', arr.shape)
-    print('Range:', arr.min(), arr.max(), '\n')
+    arr = solver.xs
+    fp = os.path.join(data_dump_dir, f"{label}_part_{rank}_of_{size}.npy")
+    print(fp)
     np.save(fp, arr)
 
     label = 'zcoord'
-    plot_name = f'{label}_{exp_name_short}'
-    fp = solver_plot.get_filepath(data_dump_dir, plot_name, ext='npy')
-    print(f'Saving {label} to {fp}.')
-
-    arr = solver_plot.zs
-    print('Shape:', arr.shape)
-    print('Range:', arr.min(), arr.max(), '\n')
+    arr = solver.zs
+    fp = os.path.join(data_dump_dir, f"{label}_part_{rank}_of_{size}.npy")
+    print(fp)
     np.save(fp, arr)
+    
 
-    label = 'tcoord'
-    plot_name = f'{label}_{exp_name_short}'
-    fp = solver_plot.get_filepath(data_dump_dir, plot_name, ext='npy')
-    print(f'Saving {label} to {fp}.')
+# plotting
+else:
 
-    arr = tends
-    print('Shape:', arr.shape)
-    print('Range:', arr.min(), arr.max(), '\n')
-    np.save(fp, arr)
+    from matplotlib.animation import FFMpegWriter as MovieWriter
+    import matplotlib.animation as animation
+
+    def _get_fps(label):
+        return [os.path.join(data_dump_dir, f"{label}_part_{i}_of_{nproc}.npy") for i in range(nproc)]
+
+    def _load_data(label):
+        data = np.concatenate([np.load(fp) for fp in _get_fps(label)], axis=1)
+        for i in range(len(tends)):
+            solver_plot.project_H1(data[i])
+
+        return data
+
+    def _make_movie(label, data):
+
+        def update_plot(frame_number, plot, ax):
+
+            global idx
+            global vmin
+            global vmax
+
+            plot[0].remove()
+            plot[0] = ax.tricontourf(xcoord.ravel(), zcoord.ravel(), data[idx].ravel(), cmap='nipy_spectral', levels=1000, vmin=vmin, vmax=vmax)
+            idx += 1
+            idx = idx % data.shape[0]
+
+        global idx
+        global vmin
+        global vmax
+        vmin = data[0].min()
+        vmax = data[0].max()
+
+        if vmin == vmax:
+            vmin = data.min()
+            vmax = data.max()
+
+        if label in ["u", "w"]:
+            vmax = 20.0
+            vmin = -vmax
+
+        idx = 0
+
+        fig = plt.figure()
+        ax = fig.add_subplot(111)
+        levels = np.linspace(vmin, vmax, 1000)
+        plot = [ax.tricontourf(xcoord.ravel(), zcoord.ravel(), data[0].ravel(), cmap='nipy_spectral', levels=levels, vmin=vmin, vmax=vmax)]
+        cbar = plt.colorbar(plot[0], ax=ax)
+
+        moviewriter = MovieWriter(fps=30)
+        fp = os.path.join(movie_dir, f"{label}_{experiment_name}.mp4")
+        with moviewriter.saving(fig, fp, dpi=100):
+            moviewriter.grab_frame()
+            for _ in range(data.shape[0]):
+
+                update_plot(0, plot, ax)
+                moviewriter.grab_frame()
+        
+
+
+    solver_plot = ThreePhaseEuler2D(xmap, zmap, poly_order, nx, g=g, cfl=0.5, a=a, nz=nz, upwind=upwind, nprocx=1)
+    
+    xcoord = np.concatenate([np.load(fp) for fp in _get_fps('xcoord')], axis=0)
+    zcoord = np.concatenate([np.load(fp) for fp in _get_fps('zcoord')], axis=0)
+    
+    labels = ["entropy", "density", "water", "vapour", "ice",  "T", "u", "w"]
+
+    if size > 1:
+        assert size == len(labels)
+        labels = labels[rank:rank+1]
+
+    print(f'Rank {rank} running {labels}')
+
+    idx = None
+    vmin = None
+    vmax = None
+
+    for label in labels:
+        print(f'\n{label}: loading data')
+        data = _load_data(label)
+        print(f'{label}: making movie')
+        t0 = time.time()
+        _make_movie(label, data)
+        print(f'Time: {time.time() - t0}s')
+        break
+
+    # plt.rcParams['font.size'] = '12'
+
+    # #
+    # solver_plot = ThreePhaseEuler2D(xmap, zmap, poly_order, nx, g=g, cfl=0.5, a=a, nz=nz, upwind=upwind, nprocx=1)
+    # # base state of the initial condition (excludes bubble perturbation)
+    # _, _, h0, s0, qw0 = initial_condition(solver_plot)
+    # qv0, ql0, qi0 = solver_plot.solve_fractions_from_entropy(h0, qw0, s0)
+
+    # def fmt(x, pos):
+    #     a, b = '{:.2e}'.format(x).split('e')
+    #     b = int(b)
+    #     return r'${} \times 10^{{{}}}$'.format(a, b)
+
+    # data_dict = dict((label, []) for label in labels)
+    # for i, tend in enumerate(tends):
+    #     filepaths = [solver_plot.get_filepath(data_dir, exp_name_short, proc=i, nprocx=nproc, time=tend) for i in range(nproc)]
+    #     solver_plot.load(filepaths)
+
+    #     for label, pfunc in zip(labels, pfunc_list):
+    #         data_dict[label].append(pfunc(solver_plot))
+
+    
+    # for label in labels:
+    #     plot_name = f'{label}_{exp_name_short}'
+    #     fp = solver_plot.get_filepath(data_dump_dir, plot_name, ext='npy')
+    #     print(f'Saving {label} to {fp}.')
+
+    #     arr = np.stack(data_dict[label], axis=0)
+    #     print('Shape:', arr.shape)
+    #     print('Range:', arr.min(), arr.max(), '\n')
+    #     np.save(fp, arr)
+
+    
+    # label = 'xcoord'
+    # plot_name = f'{label}_{exp_name_short}'
+    # fp = solver_plot.get_filepath(data_dump_dir, plot_name, ext='npy')
+    # print(f'Saving {label} to {fp}.')
+
+    # arr = solver_plot.xs
+    # print('Shape:', arr.shape)
+    # print('Range:', arr.min(), arr.max(), '\n')
+    # np.save(fp, arr)
+
+    # label = 'zcoord'
+    # plot_name = f'{label}_{exp_name_short}'
+    # fp = solver_plot.get_filepath(data_dump_dir, plot_name, ext='npy')
+    # print(f'Saving {label} to {fp}.')
+
+    # arr = solver_plot.zs
+    # print('Shape:', arr.shape)
+    # print('Range:', arr.min(), arr.max(), '\n')
+    # np.save(fp, arr)
+
+    # label = 'tcoord'
+    # plot_name = f'{label}_{exp_name_short}'
+    # fp = solver_plot.get_filepath(data_dump_dir, plot_name, ext='npy')
+    # print(f'Saving {label} to {fp}.')
+
+    # arr = tends
+    # print('Shape:', arr.shape)
+    # print('Range:', arr.min(), arr.max(), '\n')
+    # np.save(fp, arr)
 
     
         
