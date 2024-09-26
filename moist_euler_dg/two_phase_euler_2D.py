@@ -34,6 +34,8 @@ class TwoPhaseEuler2D(Euler2D):
         self.c0 = self.cpv + (self.Lv0 / self.T0) - self.cpv * np.log(self.T0) + self.Rv * np.log(self.p0)
         self.c1 = self.cl - self.cl * np.log(self.T0)
 
+        self.first_water_limit_time = None
+
     def set_initial_condition(self, *vars_in):
         Euler2D.set_initial_condition(self, *vars_in)
         self.set_thermo_vars(self.state, use_cache=False) # don't use cached moisture fractions - they don't exist yet!
@@ -136,16 +138,9 @@ class TwoPhaseEuler2D(Euler2D):
     def check_positivity(self, state):
         u, v, h, s, qw, *_ = self.get_vars(state)
 
-        # h_limited, h_cell_means = self.positivity_preserving_limiter(h)
-        # h[:] = h_limited
-        #
-        # if (h_cell_means <= 0).any():
-        #     print("Negative density cell mean detected")
-        #     exit(0)
-        #
-        # if (h <= 0).any():
-        #     print("Negative density :( ")
-        #     exit(0)
+        if (qw <= 0).any():
+            if self.first_water_limit_time is None:
+                self.first_water_limit_time = self.time
 
         hqw = h * qw
         hqw_limited, hqw_cell_means = self.positivity_preserving_limiter(hqw)

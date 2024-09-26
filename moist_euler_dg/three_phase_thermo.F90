@@ -139,7 +139,7 @@ subroutine solve_fractions_from_entropy_point(&
                 T0, logT0, p0, logp0, Lf0, Ls0, c0, c1, c2)
             if (ind > 0) then
                 qv_out = qv
-                ql_out = 0.0
+                ql_out = ql
                 qi_out = qi
                 return
             end if
@@ -322,7 +322,7 @@ subroutine solve_vapour_liquid_fractions(&
 !            return
 !        end if
 
-        if ((abs(update / qw) < 1e-10) .and. (i > 6)) then
+        if ((abs(update / qw) < 1e-10) .and. (i > 10)) then
             if (T > T0) then
                 qv_out = qv
                 ql_out = ql
@@ -455,7 +455,7 @@ subroutine solve_vapour_ice_fractions(&
 !            return
 !        end if
 
-        if ((abs(update / qw) < 1e-10) .and. (i > 6)) then
+        if ((abs(update / qw) < 1e-10) .and. (i > 10)) then
             if (T <= T0) then
                 qv_out = qv
                 qi_out = qi

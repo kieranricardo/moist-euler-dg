@@ -95,11 +95,12 @@ def initial_condition(xs, ys, solver, pert):
 run_time = 600
 
 tends = np.array([0.0, 200.0, 400.0, 600.0])
+# tends = np.array([0.0, 200.0, 400.0, 479.0])
 
 conservation_data_fp = os.path.join(data_dir, 'conservation_data.npy')
 time_list = []
 energy_list = []
-entropy_list = []
+entropy_var_list = []
 water_var_list = []
 
 if run_model:
@@ -111,7 +112,7 @@ if run_model:
         while solver.time < tend:
             time_list.append(solver.time)
             energy_list.append(solver.energy())
-            entropy_list.append(solver.integrate(solver.h * solver.s))
+            entropy_var_list.append(solver.integrate(solver.h * solver.s**2))
             water_var_list.append(solver.integrate(solver.h * solver.q**2))
 
             dt = min(solver.get_dt(), tend - solver.time)
@@ -128,11 +129,13 @@ if run_model:
         conservation_data = np.zeros((4, len(time_list)))
         conservation_data[0, :] = np.array(time_list)
         conservation_data[1, :] = np.array(energy_list)
-        conservation_data[2, :] = np.array(entropy_list)
+        conservation_data[2, :] = np.array(entropy_var_list)
         conservation_data[3, :] = np.array(water_var_list)
         np.save(conservation_data_fp, conservation_data)
 
         print('Energy error:', (energy_list[-1] - energy_list[0]) / energy_list[0])
+
+    print('Time of first limit:', solver.first_water_limit_time)
         
 
 # plotting
@@ -141,9 +144,9 @@ elif rank == 0:
 
     conservation_data = np.load(conservation_data_fp)
     time_list = conservation_data[0, :]
-    mask = time_list <= 500
+    mask = time_list <= np.inf
     energy_list = conservation_data[1, :][mask]
-    entropy_list = conservation_data[2, :][mask]
+    entropy_var_list = conservation_data[2, :][mask]
     water_var_list = conservation_data[3, :][mask]
     time_list = time_list[mask]
 
@@ -151,16 +154,16 @@ elif rank == 0:
     print('Time max energy growth:', time_list[np.argmax(e_diff) + 1])
     
     energy_list = (energy_list - energy_list[0]) / energy_list[0]
-    entropy_list = (entropy_list - entropy_list[0]) / entropy_list[0]
+    entropy_var_list = (entropy_var_list - entropy_var_list[0]) / entropy_var_list[0]
     water_var_list = (water_var_list - water_var_list[0]) / water_var_list[0]
 
     print('Energy error:', energy_list[-1])
-    print('Entropy error:', entropy_list[-1])
+    print('Entropy var error:', entropy_var_list[-1])
     print('Water var error:', water_var_list[-1])
 
     plt.figure()
     plt.plot(time_list, energy_list, label='Energy')
-    plt.plot(time_list, entropy_list, label='Entropy')
+    plt.plot(time_list, entropy_var_list, label='Entropy variance')
     plt.plot(time_list, water_var_list, label='Water variance')
     plt.grid()
     plt.legend()
