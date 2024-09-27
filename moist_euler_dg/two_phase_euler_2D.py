@@ -8,8 +8,9 @@ class TwoPhaseEuler2D(Euler2D):
 
     def __init__(self, *args, **kwargs):
         Euler2D.__init__(self, *args, **kwargs)
-        self.qv = None
-        self.ql = None
+
+        self.qv = np.zeros_like(self.xs)
+        self.ql = np.zeros_like(self.xs)
 
         # thermodynamic constants
         self.cpd = 1_004.0
@@ -29,10 +30,16 @@ class TwoPhaseEuler2D(Euler2D):
 
         self.T0 = 273.15
         self.p0 = self.psat0 = 611.2
+        self.rho0 = self.p0 / (self.Rv * self.T0)
         self.Lv0 = 3.1285e6
 
         self.c0 = self.cpv + (self.Lv0 / self.T0) - self.cpv * np.log(self.T0) + self.Rv * np.log(self.p0)
         self.c1 = self.cl - self.cl * np.log(self.T0)
+
+        self.logT0 = np.log(self.T0)
+        self.logp0 = np.log(self.p0)
+        self.logRv = np.log(self.Rv)
+        self.logRd = np.log(self.Rd)
 
         self.first_water_limit_time = None
 
@@ -626,3 +633,24 @@ class TwoPhaseEuler2D(Euler2D):
             print('Max Gibbs error:', abs(val).max())
 
         return np.minimum(qv, qw)
+
+    def rh_to_qw(self, rh, p, density, np=np):
+
+        R = self.Rd
+        for _ in range(100):
+            T = p / (density * R)
+            qv_sat = self.saturation_fraction(T, density)
+            # qv_sat = pv / (density * self.Rv * T)
+            qv = rh * qv_sat
+            R = (1 - qv) * self.Rd + qv * self.Rv
+
+        # qw = qv # unsaturated
+        return qv
+
+    def saturation_fraction(self, T, density, np=np):
+        # -self.cvv * T * np.log(T / self.T0) + self.Rv * T * np.log(qv * density / self.rho0) + self.Ls0 * (1 - T / self.T0)
+        logqsat = self.cvv * T * np.log(T / self.T0) - self.Lv0 * (1 - T / self.T0)
+        logqsat += self.gibbs_liquid(T)
+
+        logqsat /= (self.Rv * T)
+        return (self.rho0 / density) * np.exp(logqsat)

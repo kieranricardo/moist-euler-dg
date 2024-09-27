@@ -1,6 +1,7 @@
 from matplotlib import pyplot as plt
 import matplotlib.ticker as ticker
-from moist_euler_dg.two_phase_euler_2D import TwoPhaseEuler2D
+#from moist_euler_dg.two_phase_euler_2D import TwoPhaseEuler2D
+from moist_euler_dg.fortran_two_phase_euler_2D import FortranTwoPhaseEuler2D as TwoPhaseEuler2D
 import numpy as np
 import time
 import os
@@ -25,7 +26,7 @@ nz = args.n
 nproc = args.nproc
 run_model = (not args.plot) # whether to run model - set false to just plot previous run
 nx = nz
-eps = 0.8
+cfl = 0.5
 g = 9.81
 poly_order = 3
 
@@ -36,7 +37,7 @@ data_dir = os.path.join('data', experiment_name)
 plot_dir = os.path.join('plots', experiment_name)
 
 if rank == 0:
-    print(f"---------- Moist bubble with nx={nx}, nz={nz}, cfl={eps}")
+    print(f"---------- Moist bubble with nx={nx}, nz={nz}, cfl={cfl}")
     if not os.path.exists(plot_dir): os.makedirs(plot_dir)
     if not os.path.exists(data_dir): os.makedirs(data_dir)
 
@@ -117,9 +118,10 @@ def initial_condition(xs, ys, solver, pert):
 tends = np.array([400, 800, 1000, 1200])
 a = 0.5
 if run_model:
-    solver = TwoPhaseEuler2D(xmap, zmap, poly_order, nx, g=g, cfl=1.0, a=a, nz=nz, upwind=True, nprocx=nproc)
+    solver = TwoPhaseEuler2D(xmap, zmap, poly_order, nx, g=g, cfl=cfl, a=a, nz=nz, upwind=True, nprocx=nproc)
     u, v, density, s, qw, qv = initial_condition(solver.xs, solver.zs, solver, pert=2.0)
     solver.set_initial_condition(u, v, density, s, qw)
+    exit(0)
 
     for i, tend in enumerate(tends):
         t0 = time.time()
@@ -137,7 +139,7 @@ if run_model:
 elif rank == 0:
     plt.rcParams['font.size'] = '12'
 
-    solver_plot = TwoPhaseEuler2D(xmap, zmap, poly_order, nx, g=g, cfl=1.0, a=a, nz=nz, upwind=True, nprocx=1)
+    solver_plot = TwoPhaseEuler2D(xmap, zmap, poly_order, nx, g=g, cfl=cfl, a=a, nz=nz, upwind=True, nprocx=1)
     _, _, h0, s0, qw0, qv0 = initial_condition(solver_plot.xs, solver_plot.zs, solver_plot, pert=0.0)
     ql0 = qw0 - qv0
 
