@@ -1,6 +1,7 @@
 from matplotlib import pyplot as plt
 from moist_euler_dg.three_phase_euler_2D import ThreePhaseEuler2D
-from moist_euler_dg.two_phase_euler_2D import TwoPhaseEuler2D
+# from moist_euler_dg.two_phase_euler_2D import TwoPhaseEuler2D
+from moist_euler_dg.fortran_two_phase_euler_2D import FortranTwoPhaseEuler2D as TwoPhaseEuler2D
 import numpy as np
 import time
 import os
@@ -26,7 +27,7 @@ nz = args.n
 nproc = args.nproc
 run_model = (not args.plot) # whether to run model - set false to just plot previous run
 nx = nz
-eps = 0.8
+cfl = 0.5
 g = 9.81
 poly_order = 3
 a = 0.0
@@ -38,7 +39,7 @@ data_dir = os.path.join('data', experiment_name)
 plot_dir = os.path.join('plots', experiment_name)
 
 if rank == 0:
-    print(f"---------- Ice bubble with nx={nx}, nz={nz}, cfl={eps}")
+    print(f"---------- Ice bubble with nx={nx}, nz={nz}, cfl={cfl}")
     if not os.path.exists(plot_dir): os.makedirs(plot_dir)
     if not os.path.exists(data_dir): os.makedirs(data_dir)
 
@@ -107,8 +108,8 @@ entropy_list = []
 water_var_list = []
 
 if run_model:
-    ice_solver = ThreePhaseEuler2D(xmap, zmap, poly_order, nx, g=g, cfl=1.0, a=a, nz=nz, upwind=upwind, nprocx=nproc)
-    solver = TwoPhaseEuler2D(xmap, zmap, poly_order, nx, g=g, cfl=1.0, a=a, nz=nz, upwind=upwind, nprocx=nproc)
+    ice_solver = ThreePhaseEuler2D(xmap, zmap, poly_order, nx, g=g, cfl=cfl, a=a, nz=nz, upwind=upwind, nprocx=nproc)
+    solver = TwoPhaseEuler2D(xmap, zmap, poly_order, nx, g=g, cfl=cfl, a=a, nz=nz, upwind=upwind, nprocx=nproc)
     u, v, density, s, qw, qv, ql = initial_condition(
         solver.xs,
         solver.zs,
@@ -176,8 +177,8 @@ elif rank == 0:
     plt.show()
 
     # snaps
-    solver_plot = TwoPhaseEuler2D(xmap, zmap, poly_order, nx, g=g, cfl=0.5, a=a, nz=nz, upwind=upwind, nprocx=1)
-    ice_solver_plot = ThreePhaseEuler2D(xmap, zmap, poly_order, nx, g=g, cfl=0.5, a=a, nz=nz, upwind=upwind, nprocx=1)
+    solver_plot = TwoPhaseEuler2D(xmap, zmap, poly_order, nx, g=g, cfl=cfl, a=a, nz=nz, upwind=upwind, nprocx=1)
+    ice_solver_plot = ThreePhaseEuler2D(xmap, zmap, poly_order, nx, g=g, cfl=cfl, a=a, nz=nz, upwind=upwind, nprocx=1)
     _, _, _, s0, qw0, qv0, ql0 = initial_condition(solver_plot.xs, solver_plot.zs, solver_plot, ice_solver_plot, pert=0.0)
 
     def fmt(x, pos):

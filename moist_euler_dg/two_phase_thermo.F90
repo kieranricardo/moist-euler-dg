@@ -189,7 +189,11 @@ subroutine solve_vapour_liquid_fractions(&
         dvaldqv = (dgibbs_vdqv - dgibbs_ldqv) - (dgibbs_vdql - dgibbs_ldql)
         update = -val / dvaldqv
 
-        if ((abs(update / qw) < 1e-10) .and. (i > 10)) then
+        qv = qv + update
+        qv = max(1e-15, qv)
+        ql = qw - qv
+
+        if ((abs(update / qw) < 1e-10) .and. (i > 0)) then
 
             qv_out = qv
             ql_out = ql
@@ -199,10 +203,6 @@ subroutine solve_vapour_liquid_fractions(&
 
             return
         end if
-
-        qv = qv + update
-        qv = max(1e-15, qv)
-        ql = qw - qv
 
     end do
 

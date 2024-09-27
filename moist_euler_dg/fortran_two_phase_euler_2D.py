@@ -25,7 +25,6 @@ class FortranTwoPhaseEuler2D(TwoPhaseEuler2D):
             self.T0, self.logT0, self.p0, self.logp0, self.Lv0, self.c0, self.c1
         )
 
-        print('Ind:', ind.min(), ind.max(), (ind==0).mean())
         if (ind == 0).any():
             mask = ind == 0
             # print(f"Warning: thermo solve not converged at t={self.time}. density={density[mask][0]}; entropy={entropy[mask][0]}; qw={qw[mask][0]}")

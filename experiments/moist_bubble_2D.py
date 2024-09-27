@@ -115,13 +115,12 @@ def initial_condition(xs, ys, solver, pert):
 
     return u, v, density, s, qw, qv
 
-tends = np.array([400, 800, 1000, 1200])
+tends = np.array([0, 400, 800, 1000])
 a = 0.5
 if run_model:
     solver = TwoPhaseEuler2D(xmap, zmap, poly_order, nx, g=g, cfl=cfl, a=a, nz=nz, upwind=True, nprocx=nproc)
     u, v, density, s, qw, qv = initial_condition(solver.xs, solver.zs, solver, pert=2.0)
     solver.set_initial_condition(u, v, density, s, qw)
-    exit(0)
 
     for i, tend in enumerate(tends):
         t0 = time.time()
