@@ -115,7 +115,7 @@ def initial_condition(xs, ys, solver, pert):
 
     return u, v, density, s, qw, qv
 
-tends = np.array([0, 400, 800, 1000])
+tends = np.array([0, 800, 1000, 1200])
 a = 0.5
 if run_model:
     solver = TwoPhaseEuler2D(xmap, zmap, poly_order, nx, g=g, cfl=cfl, a=a, nz=nz, upwind=True, nprocx=nproc)

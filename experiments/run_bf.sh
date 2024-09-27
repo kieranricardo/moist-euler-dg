@@ -14,7 +14,6 @@ module load conda/analysis3
 module load openmpi
 
 export nz=128
-# export np=$(( 2*$nz ))
 export np=$(( $nz / 2))
 
 # mpirun -n $np python3 dry_bubble_2D.py --n $nz --nproc $np
