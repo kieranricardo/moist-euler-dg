@@ -11,7 +11,7 @@ parser.add_argument('--n', type=int, help='Number of cells')
 parser.add_argument('--nproc', type=int, help='Number of procs')
 args = parser.parse_args()
 
-exp_name_short = 'bryan-fritsch-bubble'
+exp_name_short = 'ice-bubble'
 xlim = 10_000
 zlim = 10_000
 cfl = 0.5
@@ -24,7 +24,7 @@ xmap = lambda x, z: xlim * (x - 0.5)
 nx = nz = args.n
 nproc = args.nproc
 orders = [3, 4, 5, 6]
-tend = 1200
+tend = 600
 
 plot_dir = os.path.join('plots', f'{exp_name_short}-spectral-convergence-nx{nx}-nz{nz}')
 if not os.path.exists(plot_dir): os.makedirs(plot_dir)

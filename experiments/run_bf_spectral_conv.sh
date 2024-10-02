@@ -13,17 +13,21 @@ module use /g/data/hh5/public/modules
 module load conda/analysis3
 module load openmpi
 
-export nz=104
+export nz=16
 export np=$nz
 
 # mpirun -n $np python3 dry_bubble_2D.py --n $nz --nproc $np
 
 mpirun -n $np python3 moist_bubble_2D.py --n $nz --nproc $np --o 3
-mpirun -n $np python3 moist_bubble_2D.py --n $nz --nproc $np --o 4
-mpirun -n $np python3 moist_bubble_2D.py --n $nz --nproc $np --o 5
-mpirun -n $np python3 moist_bubble_2D.py --n $nz --nproc $np --o 6
-
 python3 moist_bubble_2D.py --n $nz --nproc $np --plot --o 3
+
+mpirun -n $np python3 moist_bubble_2D.py --n $nz --nproc $np --o 4
 python3 moist_bubble_2D.py --n $nz --nproc $np --plot --o 4
+
+mpirun -n $np python3 moist_bubble_2D.py --n $nz --nproc $np --o 5
 python3 moist_bubble_2D.py --n $nz --nproc $np --plot --o 5
+
+mpirun -n $np python3 moist_bubble_2D.py --n $nz --nproc $np --o 6
 python3 moist_bubble_2D.py --n $nz --nproc $np --plot --o 6
+
+python3 spectral_convergence_moist_bubble_2D.py --n $nz --nproc $np
