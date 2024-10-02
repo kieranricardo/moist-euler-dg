@@ -18,5 +18,5 @@ export np=$(( $nz / 2))
 
 # mpirun -n $np python3 dry_bubble_2D.py --n $nz --nproc $np
 
-mpirun -n $np python3 moist_bubble_2D.py --n $nz --nproc $np
-python3 moist_bubble_2D.py --n $nz --nproc $np --plot
+mpirun -n $np python3 moist_bubble_2D.py --n $nz --nproc $np --o 3
+python3 moist_bubble_2D.py --n $nz --nproc $np  --o 3 --plot
