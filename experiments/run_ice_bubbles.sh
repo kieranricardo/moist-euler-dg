@@ -13,22 +13,13 @@ module use /g/data/hh5/public/modules
 module load conda/analysis3
 module load openmpi
 
-export nz=32
-export np=16
-mpirun -n $np python3 ice_moist_bubble_2D.py --n $nz --nproc $np
-python3 ice_moist_bubble_2D.py --n $nz --nproc $np --plot
+declare -a arr=(8 16 32 64 128)
+export o=3
+export np=4
 
-export nz=64
-export np=32
-mpirun -n $np python3 ice_moist_bubble_2D.py --n $nz --nproc $np
-python3 ice_moist_bubble_2D.py --n $nz --nproc $np --plot
+for nz in ${arr[@]}
+do
+   mpirun -n $np python3 ice_moist_bubble_2D.py --n $nz --nproc $np --o $o
+   python3 ice_moist_bubble_2D.py --n $nz --nproc $np --plot  --o $o
 
-export nz=128
-export np=64
-mpirun -n $np python3 ice_moist_bubble_2D.py --n $nz --nproc $np
-python3 ice_moist_bubble_2D.py --n $nz --nproc $np --plot
-
-export nz=200
-export np=100
-mpirun -n $np python3 ice_moist_bubble_2D.py --n $nz --nproc $np
-python3 ice_moist_bubble_2D.py --n $nz --nproc $np --plot
+done
