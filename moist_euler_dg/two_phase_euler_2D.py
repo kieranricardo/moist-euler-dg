@@ -41,11 +41,13 @@ class TwoPhaseEuler2D(Euler2D):
         self.logRv = np.log(self.Rv)
         self.logRd = np.log(self.Rd)
 
+        self.qw_min = 1e-12
         self.first_water_limit_time = None
 
     def set_initial_condition(self, *vars_in):
         Euler2D.set_initial_condition(self, *vars_in)
         self.set_thermo_vars(self.state, use_cache=False) # don't use cached moisture fractions - they don't exist yet!
+        self.qw_min = min(0.25 * self.q.min(), self.qw_min)
 
     def set_thermo_vars(self, state, use_cache=True):
         u, w, h, s, qw, T, mu, p, ie = self.get_vars(state)
@@ -133,7 +135,7 @@ class TwoPhaseEuler2D(Euler2D):
         cell_mins = cell_mins.min(axis=-1)
         diff_min = cell_mins - cell_means
 
-        new_min = np.maximum(1e-12 + 0 * cell_mins, cell_mins)
+        new_min = np.maximum(self.qw_min + 0 * cell_mins, cell_mins)
         scale = (new_min - cell_means) / diff_min
 
         out_tnsr = cell_means[..., None, None] + scale[..., None, None] * cell_diffs
