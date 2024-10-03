@@ -28,7 +28,7 @@ def get_solver(n, order, nproc):
 
     solver = ThreePhaseEuler2D(xmap, zmap, order, nx, g=g, cfl=0.5, a=a, nz=nz, upwind=upwind, nprocx=1)
 
-    tend = 600
+    tend = 400
     filepaths = [solver.get_filepath(data_dir, exp_name_short, proc=i, nprocx=nproc, time=tend)
                  for i in range(nproc)]
     solver.load(filepaths)
@@ -94,7 +94,7 @@ def refine(arr_in, interp_mats):
 ns = np.array([8, 16, 32, 64])
 solvers = [get_solver(n, order=order, nproc=n//2) for n in ns]
 n = 128
-ref_solver = get_solver(n, order=order, nproc=n//2)
+ref_solver = get_solver(n, order=order, nproc=64)
 
 var_funcs = [lambda s: s.u, lambda s: s.w, lambda s: s.h, lambda s: s.s, lambda s: s.q]
 labels = ['u', 'w', 'density', 'entropy', 'water']
@@ -127,7 +127,7 @@ for var_func, label in zip(var_funcs, labels):
 
     plt.loglog(ns, errors, label=label)
 
-start_val = np.exp(0.5 * (np.log(min_val) + np.log(max_val)))
+start_val = 5 * np.exp(0.5 * (np.log(min_val) + np.log(max_val)))
 plt.loglog(ns, start_val * ns[0] ** 3 * (ns * 1.0) ** (-3), '--', label='3rd order')
 plt.loglog(ns, start_val * ns[0] ** 2 * (ns * 1.0) ** (-2), '--', label='2nd order')
 plt.legend()

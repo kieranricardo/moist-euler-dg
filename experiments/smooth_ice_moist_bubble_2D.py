@@ -1,6 +1,7 @@
 from matplotlib import pyplot as plt
 # from moist_euler_dg.three_phase_euler_2D import ThreePhaseEuler2D
 from moist_euler_dg.fortran_three_phase_euler_2D import FortranThreePhaseEuler2D as ThreePhaseEuler2D
+from moist_euler_dg.one_phase_euler_2D import OnePhaseEuler2D
 import numpy as np
 import time
 import os
@@ -60,14 +61,16 @@ def initial_condition(xs, ys, solver, pert):
     p = 1_00_000.0 * ex ** (solver.cpd / solver.Rd)
     density = p / (solver.Rd * ex * dry_theta)
 
-    qw = solver.rh_to_qw(0.95, p, density)
-    qw = 0 * qw + 1e-10
+    # qw = solver.rh_to_qw(0.95, p, density)
+    T = p / (solver.Rd * density)
+    qw = solver.liq_saturation_fraction(T, density)
+    # qw = 0 * qw + 1e-10
     qd = 1 - qw
 
     R = solver.Rd * qd + solver.Rv * qw
     T = p / (R * density)
 
-    assert (qw <= solver.saturation_fraction(T, density)).all()
+    # assert (qw <= solver.saturation_fraction(T, density)).all()
 
     rad_max = 2_000
     rad = np.sqrt(xs ** 2 + (ys - 2.0 * rad_max) ** 2)
@@ -76,7 +79,7 @@ def initial_condition(xs, ys, solver, pert):
     density -= (pert * density / 300) * np.exp(-(2 * rad / rad_max) ** 2)
 
     T = p / (R * density)
-    assert (qw <= solver.saturation_fraction(T, density)).all()
+    # assert (qw <= solver.saturation_fraction(T, density)).all()
 
     s = qd * solver.entropy_air(T, qd, density)
     s += qw * solver.entropy_vapour(T, qw, density)
@@ -97,7 +100,7 @@ def initial_condition(xs, ys, solver, pert):
 
 run_time = 600
 
-tends = np.array([0.0, 200.0, 400.0, 600.0])
+tends = np.array([0.0, 200.0, 300.0, 400.0])
 # tends = np.array([0.0, 200.0, 400.0, 479.0])
 
 conservation_data_fp = os.path.join(data_dir, 'conservation_data.npy')
@@ -107,7 +110,7 @@ entropy_var_list = []
 water_var_list = []
 
 if run_model:
-    solver = ThreePhaseEuler2D(xmap, zmap, poly_order, nx, g=g, cfl=cfl, a=a, nz=nz, upwind=upwind, nprocx=nproc)
+    solver = OnePhaseEuler2D(xmap, zmap, poly_order, nx, g=g, cfl=cfl, a=a, nz=nz, upwind=upwind, nprocx=nproc)
     u, v, density, s, qw, qv, ql, qi = initial_condition(solver.xs, solver.zs, solver, pert=2.0)
     solver.set_initial_condition(u, v, density, s, qw)
     for i, tend in enumerate(tends):
@@ -174,7 +177,7 @@ elif rank == 0:
     fp = os.path.join(plot_dir, f'conservation_{exp_name_short}')
     plt.savefig(fp, bbox_inches="tight")
 
-    solver_plot = ThreePhaseEuler2D(xmap, zmap, poly_order, nx, g=g, cfl=0.5, a=a, nz=nz, upwind=upwind, nprocx=1)
+    solver_plot = OnePhaseEuler2D(xmap, zmap, poly_order, nx, g=g, cfl=0.5, a=a, nz=nz, upwind=upwind, nprocx=1)
     _, _, _, s0, qw0, qv0, ql0, qi0 = initial_condition(solver_plot.xs, solver_plot.zs, solver_plot, pert=0.0)
 
     def fmt(x, pos):
