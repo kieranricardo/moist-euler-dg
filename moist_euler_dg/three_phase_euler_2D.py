@@ -184,6 +184,14 @@ class ThreePhaseEuler2D(TwoPhaseEuler2D):
         logqsat /= (self.Rv * T)
         return (self.rho0 / density) * np.exp(logqsat)
 
+    def liq_saturation_fraction(self, T, density, np=np):
+        # -self.cvv * T * np.log(T / self.T0) + self.Rv * T * np.log(qv * density / self.rho0) + self.Ls0 * (1 - T / self.T0)
+        logqsat =  self.cvv * T * np.log(T / self.T0) - self.Ls0 * (1 - T / self.T0)
+        logqsat += self.gibbs_liquid(T)
+
+        logqsat /= (self.Rv * T)
+        return (self.rho0 / density) * np.exp(logqsat)
+
     def solve_fractions_from_entropy(self, density, qw, entropy, qv=None, ql=None, qi=None, iters=10, tol=1e-10):
 
         if qv is None:
