@@ -325,7 +325,7 @@ subroutine solve_vapour_liquid_fractions(&
         qv = max(1e-15, qv)
         ql = qw - qv
 
-        if ((abs(update / qw) < 1e-10) .and. (i > 5)) then
+        if ((abs(val) < 1e-7)) then
             if (T > T0) then
                 qv_out = qv
                 ql_out = ql
@@ -458,7 +458,7 @@ subroutine solve_vapour_ice_fractions(&
         qv = max(1e-15, qv)
         qi = qw - qv
 
-        if ((abs(update / qw) < 1e-10) .and. (i > 5)) then
+        if ((abs(val) < 1e-7)) then
             if (T <= T0) then
                 qv_out = qv
                 qi_out = qi
