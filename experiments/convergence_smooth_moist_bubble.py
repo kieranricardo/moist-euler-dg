@@ -6,7 +6,7 @@ from moist_euler_dg import utils
 import scipy
 
 
-exp_name_short = 'smooth-ice-bubble'
+exp_name_short = 'smooth-bryan-fritsch-bubble'
 order = 3
 nproc = 4
 
@@ -102,7 +102,7 @@ labels = ['u', 'w', 'density', 'entropy', 'water']
 max_val = -np.inf
 min_val = np.inf
 
-for var_func, label in zip(var_funcs, labels):
+for var_func, label in zip(var_funcs, labels[:-1]):
     errors = []
     norm = np.sqrt(ref_solver.integrate(var_func(ref_solver) ** 2))
     for solver in solvers:
@@ -125,10 +125,11 @@ for var_func, label in zip(var_funcs, labels):
             min_val = errors[0]
 
 
-    plt.loglog(ns, errors, label=label)
+    plt.loglog(ns, errors, 'o-', label=label)
 
+plt.ylabel('Relative $L^2$ error')
+plt.xlabel('Number of cells')
 start_val = 5 * np.exp(0.5 * (np.log(min_val) + np.log(max_val)))
 plt.loglog(ns, start_val * ns[0] ** 3 * (ns * 1.0) ** (-3), '--', label='3rd order')
-plt.loglog(ns, start_val * ns[0] ** 2 * (ns * 1.0) ** (-2), '--', label='2nd order')
 plt.legend()
-plt.savefig('plots/convergence-ice-moist-bubble.png')
+plt.savefig(f'plots/convergence-{exp_name_short}.png')
