@@ -1,11 +1,11 @@
 import numpy as np
-from moist_euler_dg.fortran_three_phase_euler_2D import FortranThreePhaseEuler2D
+from moist_euler_dg.fortran_two_phase_euler_2D import FortranTwoPhaseEuler2D
 
 
-class UnstableThreePhaseEuler2D(FortranThreePhaseEuler2D):
+class UnstableTwoPhaseEuler2D(FortranTwoPhaseEuler2D):
 
     def __init__(self, *args, **kwargs):
-        FortranThreePhaseEuler2D.__init__(self, *args, **kwargs)
+        FortranTwoPhaseEuler2D.__init__(self, *args, **kwargs)
         self.var_stable = False
 
     def _solve(self, state, dstatedt):

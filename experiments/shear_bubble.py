@@ -1,8 +1,7 @@
 from matplotlib import pyplot as plt
 import matplotlib.ticker as ticker
 #from moist_euler_dg.two_phase_euler_2D import TwoPhaseEuler2D
-# from moist_euler_dg.fortran_two_phase_euler_2D import FortranTwoPhaseEuler2D as TwoPhaseEuler2D
-from moist_euler_dg.unstable_three_phase_euler_2D import UnstableTwoPhaseEuler2D as TwoPhaseEuler2D
+from moist_euler_dg.fortran_two_phase_euler_2D import FortranTwoPhaseEuler2D as TwoPhaseEuler2D
 import numpy as np
 import time
 import os
