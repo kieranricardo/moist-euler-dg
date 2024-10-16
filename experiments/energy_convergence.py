@@ -107,9 +107,9 @@ print(energy_errors)
 print(entropy_var_errors)
 print(water_var_errors)
 
-plt.loglog(dts, energy_errors, label='Energy')
-plt.loglog(dts, entropy_var_errors, label='Entropy variance')
-plt.loglog(dts, water_var_errors, label='Water variance')
+plt.loglog(dts, energy_errors, 'o-', label='Energy')
+plt.loglog(dts, entropy_var_errors, 'o-', label='Entropy variance')
+plt.loglog(dts, water_var_errors, 'o-', label='Water variance')
 
 line_3rd = (dts / dts.max()) **3 * (0.75 * energy_errors[-1])
 line_2nd = (dts / dts.max()) **2 * (1.25 * water_var_errors[-1])
