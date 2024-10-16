@@ -154,7 +154,7 @@ elif rank == 0:
     plot_func_vapour = lambda s: s.project_H1(s.solve_qv_from_entropy(s.h, s.q, s.s) - qv0)
     plot_func_liquid = lambda s: s.project_H1(s.q - s.solve_qv_from_entropy(s.h, s.q, s.s) - ql0)
 
-    fig_list = [plt.subplots(2, 2, sharex=True, sharey=True) for _ in range(5)]
+    fig_list = [plt.subplots(2, 2, sharex=True, sharey=True, figsize=(7.4, 4.8)) for _ in range(5)]
 
     pfunc_list = [
         plot_func_entropy, plot_func_density,
@@ -176,6 +176,11 @@ elif rank == 0:
             cbar = plt.colorbar(im, ax=ax, format=ticker.FuncFormatter(fmt))
             cbar.ax.tick_params(labelsize=8)
 
+            if (i // 2) == 1:
+                ax.set_xlabel('x (m)', fontsize='xx-small')
+            if (i % 2) == 0:
+                ax.set_ylabel('z (m)', fontsize='xx-small')
+            fig.tight_layout()
 
     for (fig, ax), label in zip(fig_list, labels):
         plot_name = f'{label}_{exp_name_short}'

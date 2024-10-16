@@ -168,9 +168,13 @@ elif rank == 0:
     plt.plot(time_list, water_var_list, label='Water variance')
     plt.grid()
     plt.legend()
+    plt.ylabel('Relative error')
+    plt.xlabel('Time (s)')
     plt.yscale('symlog', linthresh=1e-15)
     fp = os.path.join(plot_dir, f'conservation_{exp_name_short}')
     plt.savefig(fp, bbox_inches="tight")
+
+    exit(0)
 
     solver_plot = ThreePhaseEuler2D(xmap, zmap, poly_order, nx, g=g, cfl=0.5, a=a, nz=nz, upwind=upwind, nprocx=1)
     _, _, _, s0, qw0, qv0, ql0, qi0 = initial_condition(solver_plot.xs, solver_plot.zs, solver_plot, pert=0.0)
@@ -187,7 +191,7 @@ elif rank == 0:
     plot_func_liquid = lambda s: s.project_H1(s.solve_fractions_from_entropy(s.h, s.q, s.s)[1] - ql0)
     plot_func_ice = lambda s: s.project_H1(s.solve_fractions_from_entropy(s.h, s.q, s.s)[2] - qi0)
 
-    fig_list = [plt.subplots(2, 2, sharex=True, sharey=True) for _ in range(6)]
+    fig_list = [plt.subplots(2, 2, sharex=True, sharey=True, figsize=(7.4, 4.8)) for _ in range(6)]
 
     pfunc_list = [
         plot_func_entropy, plot_func_density,
@@ -202,12 +206,25 @@ elif rank == 0:
         solver_plot.load(filepaths)
         energy.append(solver_plot.integrate(solver_plot.energy()))
 
-        for (fig, axs), plot_fun in zip(fig_list, pfunc_list):
+        for (fig, axs), plot_fun, label in zip(fig_list, pfunc_list, labels):
             ax = axs[i // 2][i % 2]
             ax.tick_params(labelsize=8)
             im = solver_plot.plot_solution(ax, dim=2, plot_func=plot_fun)
+            # if label == 'entropy':
+            #     cbar = plt.colorbar(im, ax=ax, format=ticker.FuncFormatter(fmt), label='Entropy (K)')
+            # elif label == 'density':
+            #     cbar = plt.colorbar(im, ax=ax, format=ticker.FuncFormatter(fmt), label='Density ($\text{kg m}^{-3}$)')
+            # else:
+            #     cbar = plt.colorbar(im, ax=ax, format=ticker.FuncFormatter(fmt), label=f'{label.capitalize() mass fraction'})
             cbar = plt.colorbar(im, ax=ax, format=ticker.FuncFormatter(fmt))
             cbar.ax.tick_params(labelsize=8)
+
+            if (i // 2) == 1:
+                ax.set_xlabel('x (m)', fontsize='xx-small')
+            if (i % 2) == 0:
+                ax.set_ylabel('z (m)', fontsize='xx-small')
+            # fig.tight_layout(w_pad=1.0, h_pad=1.0)
+            fig.tight_layout()
 
 
     for (fig, ax), label in zip(fig_list, labels):
