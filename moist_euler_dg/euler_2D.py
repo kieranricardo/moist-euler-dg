@@ -1,6 +1,5 @@
 import numpy as np
 from moist_euler_dg import utils
-from mpi4py import MPI
 import time
 import os
 
@@ -20,8 +19,17 @@ class Euler2D():
         self.upwind = upwind
         self.nprocx = nprocx
         self.buoyancy_relax = 1.0
-        self.comm = MPI.COMM_WORLD
-        self.rank = self.comm.Get_rank()
+
+        if self.nprocx > 1:
+            from mpi4py import MPI
+
+            self.comm = MPI.COMM_WORLD
+            self.rank = self.comm.Get_rank()
+
+        else:
+            self.comm = None
+            self.rank = 0
+
         self.forcing = forcing
 
         self.cp = 1_005.0
@@ -58,12 +66,10 @@ class Euler2D():
         self.D = utils.lagrange1st(order, xis_).transpose()
         self.weights2D = self.weights_z[None, :] * self.weights_x[:, None]
 
-        comm = MPI.COMM_WORLD
-
         if nprocx > 1:
             self.is_x_periodic = False
-            rank = comm.Get_rank()
-            size = comm.Get_size()
+            rank = self.rank
+            size = self.comm.Get_size()
 
             assert self.nx % nprocx == 0
             assert nprocx == size
@@ -140,7 +146,7 @@ class Euler2D():
             self.dzdzeta[self.im_horz_ext] = 0.5 * (self.dzdzeta[self.im_horz_ext] + self.right_boundary[3])
 
             self.state[:] = 0
-            MPI.COMM_WORLD.Barrier()
+            self.comm.Barrier()
 
         self.compute_metric_terms()
 
@@ -217,10 +223,9 @@ class Euler2D():
             return None
         else:
             self.right_boundary_send[:] = state_m
-            comm = MPI.COMM_WORLD
-            rank = comm.Get_rank()
-            comm.Isend(self.right_boundary_send, dest=(rank + 1) % self.nprocx, tag=2)
-            req = comm.Irecv(self.right_boundary, source=(rank + 1) % self.nprocx, tag=1)
+            rank = self.comm.Get_rank()
+            self.comm.Isend(self.right_boundary_send, dest=(rank + 1) % self.nprocx, tag=2)
+            req = self.comm.Irecv(self.right_boundary, source=(rank + 1) % self.nprocx, tag=1)
             return req
 
     def fill_left_boundary(self, state):
@@ -230,10 +235,9 @@ class Euler2D():
             return None
         else:
             self.left_boundary_send[:] = state_p
-            comm = MPI.COMM_WORLD
-            rank = comm.Get_rank()
-            comm.Isend(self.left_boundary_send, dest=(rank - 1) % self.nprocx, tag=1)
-            req = comm.Irecv(self.left_boundary, source=(rank - 1) % self.nprocx, tag=2)
+            rank = self.comm.Get_rank()
+            self.comm.Isend(self.left_boundary_send, dest=(rank - 1) % self.nprocx, tag=1)
+            req = self.comm.Irecv(self.left_boundary, source=(rank - 1) % self.nprocx, tag=2)
             return req
 
     def fill_boundaries(self, state):
@@ -250,7 +254,8 @@ class Euler2D():
         return G, c_sound, T, Fx, Fz
 
     def solve(self, state, dstatedt=None, verbose=False):
-        MPI.COMM_WORLD.Barrier()
+        if self.nprocx > 1:
+            self.comm.Barrier()
 
         t0 = time.time()
         req1, req2 = self.fill_boundaries(state)
@@ -264,7 +269,7 @@ class Euler2D():
         self._solve(state, dstatedt)
         self.solve_time += time.time() - t0
 
-        # horizontal edge boundaries MPI here!
+        # horizontal edge boundaries self.comm here!
         t0 = time.time()
         if req1 is not None:
             req1.wait()
@@ -641,13 +646,17 @@ class Euler2D():
 
     def integrate(self, q):
         out = (self.J * self.weights2D[None, None] * q).sum()
-        out = np.array([out], 'd')
-        out = self.comm.reduce(out, op=MPI.SUM)
 
-        if out is not None:
-            return out[0]
+        if self.nprocx > 1:
+            out = np.array([out], 'd')
+            out = self.comm.reduce(out, op=MPI.SUM)
+
+            if out is not None:
+                return out[0]
+            else:
+                return None
         else:
-            return None
+            return out
 
     def ddxi(self, arr):
         return np.einsum('ab,ecbd->ecad', self.D, arr)
@@ -696,12 +705,9 @@ class Euler2D():
         return arr_out
 
     def get_filepath(self, data_dir, experiment_name, proc=None, time=None, nprocx=None, ext='npy'):
-        comm = MPI.COMM_WORLD
-        rank = comm.Get_rank()
-        size = comm.Get_size()
 
         if proc is None:
-            proc = rank
+            proc = self.rank
 
         if time is None:
             time = self.time
@@ -712,7 +718,7 @@ class Euler2D():
         time = int(time)
         time_str = f'{(time // 3600)}H{(time % 3600) // 60}m{time % 60}s'
 
-        if rank == 0:
+        if self.rank == 0:
             if not os.path.exists(data_dir):
                 os.makedirs(data_dir)
 
@@ -725,8 +731,9 @@ class Euler2D():
 
     def save(self, fn):
         np.save(fn, self.state)
-        comm = MPI.COMM_WORLD
-        comm.Barrier()
+
+        if self.nprocx > 1:
+            self.comm.Barrier()
 
     def load(self, filepaths):
         if type(filepaths) is str:
