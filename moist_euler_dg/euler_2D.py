@@ -648,6 +648,7 @@ class Euler2D():
         out = (self.J * self.weights2D[None, None] * q).sum()
 
         if self.nprocx > 1:
+            from mpi4py import MPI
             out = np.array([out], 'd')
             out = self.comm.reduce(out, op=MPI.SUM)
 

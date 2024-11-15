@@ -12,7 +12,7 @@ import matplotlib.ticker as ticker
 # test case parameters
 domain_width = 10_000 # width of domain in metres
 domain_height = 10_000 # height of domain in metres
-run_time = 9000 # total run time in seconds
+run_time = 3000 # total run time in seconds
 
 p_surface = 1_00_000.0 # surface pressure in Pa
 SST = 300.0 # sea surface temperature in Kelvin
@@ -321,8 +321,6 @@ else:
         global idx
         global vmin
         global vmax
-        vmin = data[0].min()
-        vmax = data[0].max()
 
         if vmin == vmax:
             vmin = data.min()
@@ -341,7 +339,7 @@ else:
         cbar = plt.colorbar(plot[0], ax=ax)
 
         moviewriter = MovieWriter(fps=30)
-        fp = os.path.join(movie_dir, f"{label}_{experiment_name}.mp4")
+        fp = os.path.join(movie_dir, f"{label}_{experiment_name}_part_{rank+1}_of_{size}.mp4")
         with moviewriter.saving(fig, fp, dpi=100):
             moviewriter.grab_frame()
             for _ in range(data.shape[0]):
@@ -350,7 +348,6 @@ else:
                 moviewriter.grab_frame()
         
 
-
     solver_plot = ThreePhaseEuler2D(xmap, zmap, poly_order, nx, g=g, cfl=0.5, a=a, nz=nz, upwind=upwind, nprocx=1)
     
     xcoord = np.concatenate([np.load(fp) for fp in _get_fps('xcoord')], axis=0)
@@ -358,22 +355,37 @@ else:
     
     labels = ["entropy", "density", "water", "vapour", "ice",  "T", "u", "w"]
 
-    if size > 1:
-        labels = [labels[i] for i in range(rank, len(labels), size)]
+
+    # if size > 1:
+    #     labels = [labels[i] for i in range(rank, len(labels), size)]
 
     print(f'Rank {rank} running {labels}')
 
-    idx = None
-    vmin = None
-    vmax = None
-
     for label in labels:
         print(f'\n{label}: loading data')
-        data = _load_data(label)
+        all_data = _load_data(label)
         print(f'{label}: making movie')
         t0 = time.time()
+
+        global vmin
+        global vmax
+        vmin = all_data[0].min()
+        vmax = all_data[0].max()
+
+        rank_size = (all_data.shape[0] // size)
+        data = np.copy(all_data[rank * rank_size:(rank + 1) * rank_size])
+        del all_data
+
         _make_movie(label, data)
         print(f'Time: {time.time() - t0}s')
+
+        if rank == 0:
+            filepaths = [
+                f"file '{label}_{experiment_name}_part_{rank + 1}_of_{size}.mp4'\n" for rank in range(size)]
+
+            with open(os.path.join(movie_dir, f'{label}_filepaths.txt'), 'w') as f:
+                f.writelines(filepaths)
+
         break
 
     
