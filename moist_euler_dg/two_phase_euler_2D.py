@@ -422,7 +422,7 @@ class TwoPhaseEuler2D(Euler2D):
 
         ql = qw
         qd = 1 - qw
-        tmp = s + qd * self.Rd * mathlib.log(p0) - ql * self.c1
+        tmp = s + qd * self.Rd * np.log(p0) - ql * self.c1
 
         cp = qd * self.cpd + ql * self.cl
         T = np.exp(tmp / cp)
@@ -435,7 +435,7 @@ class TwoPhaseEuler2D(Euler2D):
         cp = qd * self.cpd + ql * self.cl
         tmp = cp * np.log(moist_pt)
 
-        s = tmp - qd * self.Rd * mathlib.log(p0) + ql * self.c1
+        s = tmp - qd * self.Rd * np.log(p0) + ql * self.c1
 
         return s
 
