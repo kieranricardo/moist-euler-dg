@@ -42,6 +42,7 @@ class TwoPhaseEuler2D(Euler2D):
         self.logRd = np.log(self.Rd)
 
         self.qw_min = 1e-12
+        self.limit_water = True
         self.first_water_limit_time = None
 
     def set_initial_condition(self, *vars_in):
@@ -70,28 +71,32 @@ class TwoPhaseEuler2D(Euler2D):
             self.forcing(self, self.state, k)
 
         u_tmp[:] = self.state + 0.5 * dt * k
-        self.check_positivity(u_tmp)
+        if self.limit_water:
+            self.check_positivity(u_tmp)
         self.set_thermo_vars(u_tmp)
         self.solve(u_tmp, dstatedt=k)
         if self.forcing is not None:
             self.forcing(self, u_tmp, k)
 
         u_tmp[:] = u_tmp[:] + 0.5 * dt * k
-        self.check_positivity(u_tmp)
+        if self.limit_water:
+            self.check_positivity(u_tmp)
         self.set_thermo_vars(u_tmp)
         self.solve(u_tmp, dstatedt=k)
         if self.forcing is not None:
             self.forcing(self, u_tmp, k)
 
         u_tmp[:] = (2 / 3) * self.state + (1 / 3) * u_tmp[:] + (1 / 6) * dt * k
-        self.check_positivity(u_tmp)
+        if self.limit_water:
+            self.check_positivity(u_tmp)
         self.set_thermo_vars(u_tmp)
         self.solve(u_tmp, dstatedt=k)
         if self.forcing is not None:
             self.forcing(self, u_tmp, k)
 
         self.state[:] = u_tmp + 0.5 * dt * k
-        self.check_positivity(self.state)
+        if self.limit_water:
+            self.check_positivity(self.state)
         self.set_thermo_vars(self.state)
 
         self.time += dt
@@ -412,6 +417,27 @@ class TwoPhaseEuler2D(Euler2D):
 
     def entropy_air(self, T, qd, density, mathlib=np):
         return self.cvd * mathlib.log(T) - self.Rd * mathlib.log(qd * self.Rd) - self.Rd * mathlib.log(density)
+
+    def moist_potential_temperature(self, s, qw, p0=100_000):
+
+        ql = qw
+        qd = 1 - qw
+        tmp = s + qd * self.Rd * mathlib.log(p0) - ql * self.c1
+
+        cp = qd * self.cpd + ql * self.cl
+        T = np.exp(tmp / cp)
+
+        return T
+
+    def moist_potential_temperature_to_entropy(self, moist_pt, qw, p0=100_000):
+        ql = qw
+        qd = 1 - qw
+        cp = qd * self.cpd + ql * self.cl
+        tmp = cp * np.log(moist_pt)
+
+        s = tmp - qd * self.Rd * mathlib.log(p0) + ql * self.c1
+
+        return s
 
     def gibbs_vapour(self, T, pv, mathlib=np):
         return -self.cpv * T * mathlib.log(T / self.T0) + self.Rv * T * mathlib.log(pv / self.p0) + self.Lv0 * (1 - T / self.T0)
