@@ -609,7 +609,7 @@ class Euler2D():
 
         self.time += dt
 
-    def plot_solution(self, ax, vmin=None, vmax=None, plot_func=None, dim=3, cmap='nipy_spectral', levels=1000):
+    def plot_solution(self, ax, vmin=None, vmax=None, plot_func=None, dim=3, cmap='nipy_spectral', levels=1000, km=False):
 
         def _reshape(arr):
             return arr.swapaxes(1, 2).reshape(self.h.shape[0] * self.h.shape[2], -1)
@@ -622,13 +622,17 @@ class Euler2D():
         x_plot = _reshape(self.xs)
         y_plot = _reshape(self.zs)
         z_plot = _reshape(z_plot)
+
+        if km:
+            x_plot = x_plot / 1000
+            y_plot = y_plot / 1000
 
         if dim == 3:
             return ax.plot_surface(x_plot, y_plot, z_plot, cmap=cmap, vmin=vmin, vmax=vmax)
         elif dim == 2:
             return ax.contourf(x_plot, y_plot, z_plot, cmap=cmap, vmin=vmin, vmax=vmax, levels=levels)
 
-    def plot_contours(self, ax, vmin=None, vmax=None, plot_func=None, levels=1000):
+    def plot_contours(self, ax, vmin=None, vmax=None, plot_func=None, levels=1000, km=False):
 
         def _reshape(arr):
             return arr.swapaxes(1, 2).reshape(self.h.shape[0] * self.h.shape[2], -1)
@@ -641,6 +645,10 @@ class Euler2D():
         x_plot = _reshape(self.xs)
         y_plot = _reshape(self.zs)
         z_plot = _reshape(z_plot)
+
+        if km:
+            x_plot = x_plot / 1000
+            y_plot = y_plot / 1000
 
         return ax.contour(x_plot, y_plot, z_plot, vmin=vmin, vmax=vmax, levels=levels, colors='black', linewidths=0.5)
 

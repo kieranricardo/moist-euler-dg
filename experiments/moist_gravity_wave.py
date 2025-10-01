@@ -7,6 +7,7 @@ import argparse
 from mpi4py import MPI
 import matplotlib.ticker as ticker
 import scipy
+import cmocean
 
 
 comm = MPI.COMM_WORLD
@@ -67,97 +68,133 @@ def dry_density_profile(solver, zs):
     return density_profile
 
 
-def _get_inv_ddz(zs):
-    sz = zs.size
-    dz = np.diff(zs).mean()
+def _get_ddz_matrix(solver):
+    zs = solver.zs[0, :, 0]
+    dz = np.diff(zs[:, 0])[0]
+
+    assert np.allclose(np.diff(zs[:, 0]), dz)
 
     data = []
     row_idx = []
     col_idx = []
 
-    data.extend([-1 / dz, 1 / dz])
-    row_idx.extend([0, 0])
-    col_idx.extend([0, 1])
+    n = solver.order + 1
+    for element_idx in range(solver.nz):
 
-    for i in range(1, sz - 1):
-        data.extend([-1 / (2 * dz), 1 / (2 * dz)])
-        row_idx.extend([i, i])
-        col_idx.extend([i - 1, i + 1])
+        shift = element_idx * n
+        for i in range(n):
+            for j in range(n):
 
-    data.extend([-1 / dz, 1 / dz])
-    row_idx.extend([sz - 1, sz - 1])
-    col_idx.extend([sz - 2, sz - 1])
+                data.append(solver.D[i, j] * 2 / dz)
+                row_idx.append(i + shift)
+                col_idx.append(j + shift)
 
-    data[0] -= 1.0  # SAT term
+                if (i == j) and (i == 0) and (element_idx > 0):
+                    data[-1] += 0.5 * (dz / 2) / solver.weights_z[-1]
 
+                if (i == j) and (i == (n - 1)) and (element_idx < (solver.nz - 1)):
+                    data[-1] += -0.5 * (dz / 2) / solver.weights_z[-1]
+
+    for element_idx in range(1, solver.nz):
+        im = element_idx * n - 1
+        ip = element_idx * n
+
+        scale = (dz / 2) / solver.weights_z[-1]
+
+        # centred
+        data.extend([0.5 * scale, -0.5 * scale])
+        row_idx.extend([im, ip])
+        col_idx.extend([ip, im])
+
+    data[0] += (dz / 2) / solver.weights_z[-1]
     data = np.array(data)
     row_idx = np.array(row_idx)
     col_idx = np.array(col_idx)
 
-    ddz_sparse = scipy.sparse.coo_matrix((data, (row_idx, col_idx))).tocsc()
-    inv_ddz = scipy.sparse.linalg.splu(ddz_sparse)
+    ddz_mat = scipy.sparse.coo_matrix((data, (row_idx, col_idx))).tocsc()
+    inv_ddz = scipy.sparse.linalg.splu(ddz_mat)
 
-    return inv_ddz
-
-
-def _ddz(arr, zs):
-    dz = np.diff(zs).mean()
-
-    out = np.zeros_like(arr)
-    out[1:-1] = (arr[:-2] - arr[2:]) / (2 * dz)
-    out[0] = (arr[0] - arr[1]) / dz
-    out[-1] = (arr[-2] - arr[-1]) / dz
-
-    return -out
+    return zs.ravel(), dz, ddz_mat, inv_ddz
 
 
 def initial_condition(solver, pert):
     # solve for rho s.t: (d/dz) p(rho, s, qw) + g * rho = 0
 
-    # setup moisture and moist potential temperature/entropy profiles
-    mpt_sfc = 300.0 # sft moist potential temp
-    N = 0.01 # Brunt-Vaisala frequency
-    qw_sfc = 0.02 # constant water mass fraction
+    # get derivative matrix (included DG jumps and SAT boundary term
+    zs, dz, ddz_mat, inv_ddz = _get_ddz_matrix(solver)
 
-    zs = np.linspace(0, zlim, 1000)
+    # setup moisture and moist potential temperature/entropy profiles
+    mpt_sfc = 300.0  # sft moist potential temp
+    N = 0.01  # Brunt-Vaisala frequency
+    qw_sfc = 0.02  # constant water mass fraction
+    p_sfc = 100_000
+
     qw = qw_sfc + np.zeros_like(zs)
     mpt_profile = mpt_sfc * np.exp(N ** 2 * zs / solver.g)
     s = solver.moist_potential_temperature_to_entropy(mpt_profile, qw)
 
     # initial guess for density profile
-    density_ = dry_density_profile(solver, zs)
-
-    # create finite difference operator
-    inv_ddz = _get_inv_ddz(zs)
+    density = dry_density_profile(solver, zs)
 
     # newton iteration
-    for _ in range(40):
-        enthalpy, T_, p_, ie_, _, qv_, ql_ = solver.get_thermodynamic_quantities(density_, s, qw)
+    ftol = 1e-2
+
+    prev_error = np.inf
+    for ii in range(1000):
+
+        enthalpy, T, p, ie, _, qv, ql = solver.get_thermodynamic_quantities(density, s, qw)
 
         qd = (1 - qw)
-        R = qd * solver.Rd + qv_ * solver.Rv
-        cv = qd * solver.cpd + qv_ * solver.cvv + ql_ * solver.cl
+        R = qd * solver.Rd + qv * solver.Rv
+        cv = qd * solver.cpd + qv * solver.cvv + ql * solver.cl
 
-        dpdrho = enthalpy * R / cv
+        dpdrho = (p / density) * ((R / cv) + 1)
 
-        # hydrostatic balance error
-        y = _ddz(p_, zs) + g * density_
-        # add SAT term
-        y[0] += (100_000 - p_[0])
+        y = ddz_mat @ p + g * density
+        y[0] -= p_sfc * (dz / 2) / solver.weights_z[-1]
 
-        # gradient of hydrostatic balance error w.r.t. density
-        # dydh = ddz_mat @ np.diag(dpdrho) + np.eye(ddz_mat.shape[0]) * g
-        # add SAT term
-        # dydh[0, 0] -= dpdrho[0]
-        # drho = -np.linalg.solve(dydh, y)
+        error = np.sqrt((y.reshape((solver.nz, -1)) ** 2 * solver.weights_z[None, :] * (dz / 2)).sum()) / zlim
+        #     if ii == 0:
+        #         print(error)
 
-        drho = -inv_ddz.solve(y) / dpdrho
-        density_ = density_ + drho
+        #     if ii % 10 == 0:
+        #         print('Relative error reduction:', abs(prev_error - error) / prev_error)
 
-    # print(abs(y).mean())
+        if ii > 0:
+            rel_error_reduction = abs(prev_error - error) / prev_error
 
+        if abs(prev_error - error) < ftol * prev_error:
+            if rank == 0:
+                print(f'ftol condition satisfied at iteration {ii}')
+            break
+
+        prev_error = error
+
+        # inner loop
+        rhs = -y
+        drho = np.zeros_like(rhs)
+
+        rtol = 1e-8
+
+        for jj in range(50):
+
+            drho = inv_ddz.solve(rhs - g * drho) / dpdrho
+
+            lhs = ddz_mat @ (dpdrho * drho) + g * drho
+            resid = rhs - lhs
+
+            if np.linalg.norm(resid) <= rtol * np.linalg.norm(rhs):
+                break
+
+        if np.linalg.norm(resid) > rtol * np.linalg.norm(rhs):
+            print('Inner loop failed')
+
+        density = density + drho
+
+    if rank == 0:
+        print(f'Average hydrostatic balance error = {error:.4g} N')
     # output quantities on model grid
-    density = np.interp(solver.zs, zs, density_)
+    density = (np.ones_like(solver.zs[:, :1, :, :1]) * density.reshape((1, solver.nz, 1, solver.order + 1)))
 
     mpt_profile = mpt_sfc * np.exp(N ** 2 * solver.zs / solver.g)
     qw = qw_sfc + np.zeros_like(mpt_profile)
@@ -256,13 +293,15 @@ elif rank == 0:
 
         for (fig, axs), plot_fun, label in zip(fig_list, pfunc_list, labels):
 
-            # if label == 'moist_potential_temperature':
-            #     levels = np.linspace(0)
-            # else:
-            #     levels = 1000
             ax = axs[i // 2][i % 2]
             ax.tick_params(labelsize=8)
-            im = solver_plot.plot_solution(ax, dim=2, plot_func=plot_fun)
+
+            if label == 'moist_potential_temperature':
+                im = solver_plot.plot_solution(ax, dim=2, plot_func=plot_fun, km=True, levels=1000, cmap=cmocean.cm.thermal)
+            else:
+                levels = 1000
+                im = solver_plot.plot_solution(ax, dim=2, plot_func=plot_fun, km=True, levels=1000)
+
             # if label == 'entropy':
             #     cbar = plt.colorbar(im, ax=ax, format=ticker.FuncFormatter(fmt), label='Entropy (K)')
             # elif label == 'density':
@@ -273,9 +312,9 @@ elif rank == 0:
             cbar.ax.tick_params(labelsize=8)
 
             if (i // 2) == 1:
-                ax.set_xlabel('x (m)', fontsize='xx-small')
+                ax.set_xlabel('x (km)', fontsize='xx-small')
             if (i % 2) == 0:
-                ax.set_ylabel('z (m)', fontsize='xx-small')
+                ax.set_ylabel('z (km)', fontsize='xx-small')
             # fig.tight_layout(w_pad=1.0, h_pad=1.0)
             fig.tight_layout()
 
@@ -285,3 +324,20 @@ elif rank == 0:
         fp = solver_plot.get_filepath(plot_dir, plot_name, ext='png')
         print(fp)
         fig.savefig(fp, bbox_inches="tight")
+        break
+
+    # full moist pt plot
+    plt.figure(figsize=(12, 6))
+    levels = np.linspace(-3e-3, 3e-3, 13)
+    solver_plot.plot_contours(plt.gca(), plot_func=plot_func_mpt, km=True, levels=levels)
+    im = solver_plot.plot_solution(plt.gca(), dim=2, plot_func=plot_func_mpt, km=True, levels=levels, cmap=cmocean.cm.thermal)
+    cbar = plt.colorbar(im, ax=plt.gca(), format=ticker.FuncFormatter(fmt), label=r'$\theta_e$ (K)')
+    cbar.ax.tick_params(labelsize=8)
+    plt.gca().set_xlabel('x (km)')
+    plt.gca().set_ylabel('z (km)')
+    plt.tight_layout()
+
+    plot_name = f'moist_potential_temperature_{exp_name_short}_final'
+    fp = solver_plot.get_filepath(plot_dir, plot_name, ext='png')
+    print(fp)
+    plt.savefig(fp)
