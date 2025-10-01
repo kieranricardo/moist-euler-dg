@@ -1,3 +1,16 @@
+import sys, types
+
+# Create a fake distutils.msvccompiler module with a dummy get_build_version
+msvccompiler_stub = types.ModuleType("distutils.msvccompiler")
+
+def get_build_version():
+    # Return a dummy version number; it is never actually used on Linux
+    return None
+
+msvccompiler_stub.get_build_version = get_build_version
+
+sys.modules["distutils.msvccompiler"] = msvccompiler_stub
+
 from distutils.core import setup
 import site
 from numpy.distutils.core import setup, Extension

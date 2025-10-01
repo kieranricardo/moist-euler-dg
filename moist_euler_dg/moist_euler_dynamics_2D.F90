@@ -62,11 +62,11 @@ subroutine solve(&
         call boundary_fluxes(&
             dudt(ip), dwdt(ip), &
             dhdt(ip), dsdt(ip), dqdt(ip), &
-            u(ip), w(ip), h(ip), s(ip), T(ip), mu(ip), p(ip), ie(ip), &
+            u(ip), w(ip), h(ip), s(ip), q(ip), T(ip), mu(ip), p(ip), ie(ip), &
             Gp, Fxp, Fzp, &
             dudt(im), dwdt(im), &
             dhdt(im), dsdt(im), dqdt(im), &
-            u(im), w(im), h(im), s(im), T(im), mu(im), p(im), ie(im), &
+            u(im), w(im), h(im), s(im), q(im), T(im), mu(im), p(im), ie(im), &
             Gm, Fxm, Fzm, &
             norm_grad_contra, wz, a, upwind_flag, gamma  &
         )

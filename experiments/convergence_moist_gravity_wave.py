@@ -28,7 +28,7 @@ def get_solver(nz, order, nproc):
 
     solver = ThreePhaseEuler2D(xmap, zmap, order, nx, g=g, cfl=0.5, a=a, nz=nz, upwind=upwind, nprocx=1)
 
-    tend = 3600
+    tend = 0
     filepaths = [solver.get_filepath(data_dir, exp_name_short, proc=i, nprocx=nproc, time=tend)
                  for i in range(nproc)]
     solver.load(filepaths)
@@ -91,30 +91,49 @@ def refine(arr_in, interp_mats):
     return arr_out
 
 
-nzs = np.array([2, 4, 8, 16])
-solvers = [get_solver(nz, order=order, nproc=nproc) for nz in nzs]
+ref_solver = get_solver(64, order=order, nproc=80)
+nzs = np.array([2, 4, 8, 16, 32])
 
-ref_solver = get_solver(16, order=order, nproc=4)
+# ref_solver = get_solver(32, order=order, nproc=64)
+# nzs = np.array([2, 4, 8, 16])
 
-var_funcs = [lambda s: s.u, lambda s: s.w, lambda s: s.h, lambda s: s.s, lambda s: s.q]
-labels = ['u', 'w', 'density', 'entropy', 'water']
+solvers = [get_solver(nz, order=order, nproc=2 *nz) for nz in nzs]
+
+
+var_funcs = [lambda s: (s.u, s.w), lambda s: s.h, lambda s: s.s, lambda s: s.q]
+labels = ['velocity', 'density', 'entropy', 'water']
 
 max_val = -np.inf
 min_val = np.inf
 
 for var_func, label in zip(var_funcs, labels[:-1]):
     errors = []
-    norm = np.sqrt(ref_solver.integrate(var_func(ref_solver) ** 2))
+
+    if label == 'velocity':
+        u_ref, w_ref = var_func(ref_solver)
+        norm = np.sqrt(ref_solver.integrate(u_ref ** 2 + w_ref**2))
+    else:
+        norm = np.sqrt(ref_solver.integrate(var_func(ref_solver) ** 2))
     for solver in solvers:
+        
+        if label == 'velocity':
+            u, w = var_func(solver)
+            while (u.shape[0] < ref_solver.xs.shape[0]):
+                u = refine(u, interp_mats)
+                w = refine(w, interp_mats)
 
-        arr = var_func(solver)
+            assert u.shape == ref_solver.xs.shape
+            assert w.shape == ref_solver.xs.shape
 
-        while (arr.shape[0] < ref_solver.xs.shape[0]):
-            arr = refine(arr, interp_mats)
+            error = np.sqrt(ref_solver.integrate((u - u_ref) ** 2 + (w - w_ref)**2))
+        else:
+            arr = var_func(solver)
+            while (arr.shape[0] < ref_solver.xs.shape[0]):
+                arr = refine(arr, interp_mats)
 
-        assert arr.shape == ref_solver.xs.shape
+            assert arr.shape == ref_solver.xs.shape
 
-        error = np.sqrt(ref_solver.integrate((arr - var_func(ref_solver)) ** 2))
+            error = np.sqrt(ref_solver.integrate((arr - var_func(ref_solver)) ** 2))
         error /= norm
         errors.append(error)
 
