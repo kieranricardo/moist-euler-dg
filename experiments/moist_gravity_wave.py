@@ -1,5 +1,6 @@
 from matplotlib import pyplot as plt
 from moist_euler_dg.fortran_two_phase_euler_2D import FortranTwoPhaseEuler2D as TwoPhaseEuler
+from moist_euler_dg import utils
 import numpy as np
 import time
 import os
@@ -163,7 +164,7 @@ def get_profiles(solver, p_sfc, mpt_sfc, N, qw_sfc):
     # solve for rho s.t: (d/dz) p(rho, s, qw) + g * rho = 0
 
     # get derivative matrix (included DG jumps and SAT boundary term
-    zs, dz, ddz_mat, inv_ddz, sat_scale = _sbp_get_ddz_matrix(solver)
+    zs, dz, ddz_mat, inv_ddz, sat_scale = _dg_get_ddz_matrix(solver)
 
     # setup moisture and moist potential temperature/entropy profiles
     qw = qw_sfc + np.zeros_like(zs)
@@ -235,6 +236,52 @@ def get_profiles(solver, p_sfc, mpt_sfc, N, qw_sfc):
     return density, zs
 
 
+def hr_profiles(solver, p_sfc, mpt_sfc, N, qw_sfc):
+    nz_hr = 64
+    nx_hr = 1
+    solver_hr = TwoPhaseEuler(
+        xmap, zmap, poly_order, nx_hr, g=g, cfl=0.4, a=a, nz=nz_hr, upwind=upwind, nprocx=1
+    )
+
+    density_hr, _ = get_profiles(solver_hr, p_sfc, mpt_sfc, N, qw_sfc)
+
+    density_hr = density_hr.reshape((nz_hr, -1))
+    dz_hr = zlim / nz_hr
+
+    ip = (slice(1, None), 0)
+    im = (slice(0, -1), -1)
+
+    density_avg = 0.5 * (density_hr[ip] + density_hr[im])
+    density_hr[ip] = density_avg
+    density_hr[im] = density_avg
+
+    x_in, _ = utils.gll(solver.order, iterative=True)
+    lagrange_polys = []
+    for i in range(len(x_in)): 
+        x_data = np.zeros_like(x_in)
+        x_data[i] = 1.0
+        lagrange_polys.append(scipy.interpolate.lagrange(x_in, x_data))
+        
+    def _eval_solution_at_point(z, coeffs, dz):
+
+        cell_idx = int(z / dz)
+        zeta = (2 * (z - cell_idx * dz) / dz) - 1
+        
+        if (cell_idx == coeffs.shape[0]) and (zeta == -1):
+            zeta = 1
+            cell_idx = coeffs.shape[0] - 1
+        
+        lagrange_poly_data = np.array([poly(zeta) for poly in lagrange_polys])
+        out = (lagrange_poly_data * coeffs[cell_idx]).sum()
+        
+        return out
+
+    density_lr = []
+    for z in solver.zs[0, :, 0].ravel():
+        density_lr.append(_eval_solution_at_point(z, density_hr, dz_hr))
+        
+    return np.array(density_lr), solver.zs[0, :, 0].ravel()
+
 def initial_condition(solver, pert):
     mpt_sfc = 300.0 # sft moist potential temp
     N = 0.01 # Brunt-Vaisala frequency
@@ -244,7 +291,8 @@ def initial_condition(solver, pert):
     mpt_profile = mpt_sfc * np.exp(N ** 2 * solver.zs / solver.g)
     qw = qw_sfc + np.zeros_like(mpt_profile)
     
-    density, zs = get_profiles(solver, p_sfc, mpt_sfc, N, qw_sfc)
+    density, zs = hr_profiles(solver, p_sfc, mpt_sfc, N, qw_sfc)
+    # density, zs = get_profiles(solver, p_sfc, mpt_sfc, N, qw_sfc)
     
     # output density on model grid
     if (zs.size == (solver.nz * (solver.order + 1))) and np.allclose(zs, solver.zs[0, :, 0].ravel()):

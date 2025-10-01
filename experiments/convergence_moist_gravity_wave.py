@@ -28,7 +28,7 @@ def get_solver(nz, order, nproc):
 
     solver = ThreePhaseEuler2D(xmap, zmap, order, nx, g=g, cfl=0.5, a=a, nz=nz, upwind=upwind, nprocx=1)
 
-    tend = 0
+    tend = 3600
     filepaths = [solver.get_filepath(data_dir, exp_name_short, proc=i, nprocx=nproc, time=tend)
                  for i in range(nproc)]
     solver.load(filepaths)
