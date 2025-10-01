@@ -317,6 +317,7 @@ elif rank == 0:
                 ax.set_ylabel('z (km)', fontsize='xx-small')
             # fig.tight_layout(w_pad=1.0, h_pad=1.0)
             fig.tight_layout()
+            break
 
     for (fig, ax), label in zip(fig_list, labels):
 
