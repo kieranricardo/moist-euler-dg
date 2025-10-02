@@ -11,7 +11,7 @@ exp_name_short = 'moist-gravity-wave'
 order = 3
 tend = 3600
 
-xlim = 10_000
+xlim = 300_000
 zlim = 10_000
 cfl = 0.5
 g = 9.81
@@ -106,6 +106,7 @@ labels = ['velocity', 'density', 'entropy', 'water']
 max_val = -np.inf
 min_val = np.inf
 dxs = xlim / (10 * nzs)
+print(dxs)
 
 for var_func, label in zip(var_funcs, labels[:-1]):
     errors = []
@@ -149,15 +150,15 @@ for var_func, label in zip(var_funcs, labels[:-1]):
 
 
 plt.ylabel('Relative $L^2$ error')
-plt.xlabel('Horizontal element size (m)')
+plt.xlabel('Horizontal element size (km)')
 start_val = 5 * np.exp(0.5 * (np.log(min_val) + np.log(max_val)))
 plt.loglog(dxs, start_val * nzs[0] ** 3 * (nzs * 1.0) ** (-3), '--', label='3rd order')
 plt.loglog(dxs, 0.01 * start_val * nzs[0] ** 4 * (nzs * 1.0) ** (-4), '--', label='4th order')
 plt.legend()
 time = int(tend)
 time_str = f'{(time // 3600)}H{(time % 3600) // 60}m{time % 60}s'
-xticks = [30, 50, 100, 200, 400]
-plt.gca().set_xticks(xticks, labels=[str(x) for x in xticks])
+xticks = [1000, 2000, 4000, 8000, 16000]
+plt.gca().set_xticks(xticks, labels=[str(x // 1000) for x in xticks])
 plt.gca().minorticks_off()
 # plt.gca().xaxis.set_minor_formatter(mticker.ScalarFormatter())
 # plt.gca().xaxis.set_major_formatter(mticker.ScalarFormatter())
