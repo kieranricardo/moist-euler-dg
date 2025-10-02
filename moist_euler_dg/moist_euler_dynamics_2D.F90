@@ -214,7 +214,7 @@ subroutine solve_column(&
         c_snd = sqrt(gamma * p(ip) / h(ip))
         normal_vel_p = Fzp / (norm_grad_contra * h(ip))
         ! 0.5 used to be a here
-        dwdt(ip) = dwdt(ip) - 2 * 0.5 * (c_snd + abs(normal_vel_p)) * normal_vel_p / wz
+        dwdt(ip) = dwdt(ip) - 2 * a * (c_snd + abs(normal_vel_p)) * normal_vel_p / wz
     end do
 
     do k=1,n
@@ -225,7 +225,7 @@ subroutine solve_column(&
 
         c_snd = sqrt(gamma * p(im) / h(im))
         normal_vel_m = Fzm / (norm_grad_contra * h(im))
-        dwdt(im) = dwdt(im) - 2 * 0.5 * (c_snd + abs(normal_vel_m)) * normal_vel_m / wz
+        dwdt(im) = dwdt(im) - 2 * a * (c_snd + abs(normal_vel_m)) * normal_vel_m / wz
     end do
 
 end subroutine
