@@ -120,6 +120,9 @@ plt.loglog(dts, line_3rd, '--', color='black', label='3rd order')
 plt.ylabel('Relative error')
 plt.xlabel('Timestep (s)')
 plt.legend()
+plt.gca().set_xticks(dts, labels=[f'{dt:.1f}' for dt in dts])
+plt.grid()
+
 
 plot_dir = 'plots'
 if not os.path.exists(plot_dir): os.makedirs(plot_dir)
