@@ -4,6 +4,7 @@ import numpy as np
 import os
 from moist_euler_dg import utils
 import scipy
+import matplotlib.ticker as mticker
 
 
 exp_name_short = 'moist-gravity-wave'
@@ -104,6 +105,7 @@ labels = ['velocity', 'density', 'entropy', 'water']
 
 max_val = -np.inf
 min_val = np.inf
+dxs = xlim / (10 * nzs)
 
 for var_func, label in zip(var_funcs, labels[:-1]):
     errors = []
@@ -142,15 +144,23 @@ for var_func, label in zip(var_funcs, labels[:-1]):
         if errors[0] < min_val:
             min_val = errors[0]
 
+    print(label, np.diff(np.log(errors)) / np.diff(np.log(nzs)))
+    plt.loglog(dxs, errors, 'o-', label=label)
 
-    plt.loglog(nzs, errors, 'o-', label=label)
 
 plt.ylabel('Relative $L^2$ error')
-plt.xlabel('Number of cells')
+plt.xlabel('Horizontal element size (m)')
 start_val = 5 * np.exp(0.5 * (np.log(min_val) + np.log(max_val)))
-plt.loglog(nzs, start_val * nzs[0] ** 3 * (nzs * 1.0) ** (-3), '--', label='3rd order')
-plt.loglog(nzs, 0.01 * start_val * nzs[0] ** 4 * (nzs * 1.0) ** (-4), '--', label='4th order')
+plt.loglog(dxs, start_val * nzs[0] ** 3 * (nzs * 1.0) ** (-3), '--', label='3rd order')
+plt.loglog(dxs, 0.01 * start_val * nzs[0] ** 4 * (nzs * 1.0) ** (-4), '--', label='4th order')
 plt.legend()
 time = int(tend)
 time_str = f'{(time // 3600)}H{(time % 3600) // 60}m{time % 60}s'
+xticks = [30, 50, 100, 200, 400]
+plt.gca().set_xticks(xticks, labels=[str(x) for x in xticks])
+plt.gca().minorticks_off()
+# plt.gca().xaxis.set_minor_formatter(mticker.ScalarFormatter())
+# plt.gca().xaxis.set_major_formatter(mticker.ScalarFormatter())
+plt.grid()
+
 plt.savefig(f'plots/convergence-{exp_name_short}-time-{time_str}.png')

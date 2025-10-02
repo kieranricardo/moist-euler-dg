@@ -431,7 +431,7 @@ elif rank == 0:
 
     # full moist pt plot
     plt.figure(figsize=(12, 6))
-    levels = np.linspace(-3e-3, 3e-3, 13) * 100
+    levels = np.linspace(-3e-3, 3e-3, 13)
     solver_plot.plot_contours(plt.gca(), plot_func=plot_func_mpt, km=True, levels=levels)
     im = solver_plot.plot_solution(plt.gca(), dim=2, plot_func=plot_func_mpt, km=True, levels=levels, cmap=cmocean.cm.thermal)
     cbar = plt.colorbar(im, ax=plt.gca(), format=ticker.FuncFormatter(fmt), label=r'$\theta_e$ (K)')
