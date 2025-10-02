@@ -276,16 +276,16 @@ def hr_profiles(solver, p_sfc, mpt_sfc, N, qw_sfc):
         
         return out
 
-    zs_eval = np.linspace(0, 10_000, 1000)
-    density_eval = []
-    for z in zs_eval:
-        density_eval.append(_eval_solution_at_point(z, density_hr, dz_hr))
+    # zs_eval = np.linspace(0, 10_000, 1000)
+    # density_eval = []
+    # for z in zs_eval:
+    #     density_eval.append(_eval_solution_at_point(z, density_hr, dz_hr))
         
-    poly_fit = np.polynomial.chebyshev.Chebyshev.fit(zs_eval, density_eval, deg=5)
-    density_lr = poly_fit(solver.zs[0, :, 0].ravel())
-    # density_lr = []
-    # for z in solver.zs[0, :, 0].ravel():
-    #     density_lr.append(_eval_solution_at_point(z, density_hr, dz_hr))
+    # poly_fit = np.polynomial.chebyshev.Chebyshev.fit(zs_eval, density_eval, deg=5)
+    # density_lr = poly_fit(solver.zs[0, :, 0].ravel())
+    density_lr = []
+    for z in solver.zs[0, :, 0].ravel():
+        density_lr.append(_eval_solution_at_point(z, density_hr, dz_hr))
         
     return np.array(density_lr), solver.zs[0, :, 0].ravel()
 
