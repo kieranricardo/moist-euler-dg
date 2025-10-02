@@ -7,6 +7,7 @@ import os
 import argparse
 from mpi4py import MPI
 import matplotlib.ticker as ticker
+import cmocean
 
 
 comm = MPI.COMM_WORLD
@@ -174,8 +175,6 @@ elif rank == 0:
     fp = os.path.join(plot_dir, f'conservation_{exp_name_short}')
     plt.savefig(fp, bbox_inches="tight")
 
-    exit(0)
-
     solver_plot = ThreePhaseEuler2D(xmap, zmap, poly_order, nx, g=g, cfl=0.5, a=a, nz=nz, upwind=upwind, nprocx=1)
     _, _, _, s0, qw0, qv0, ql0, qi0 = initial_condition(solver_plot.xs, solver_plot.zs, solver_plot, pert=0.0)
 
@@ -187,9 +186,9 @@ elif rank == 0:
     plot_func_entropy = lambda s: s.project_H1(s.s - s0)
     plot_func_density = lambda s: s.project_H1(s.h)
     plot_func_water = lambda s: s.project_H1(s.q - qw0)
-    plot_func_vapour = lambda s: s.project_H1(s.solve_fractions_from_entropy(s.h, s.q, s.s)[0] - qv0)
-    plot_func_liquid = lambda s: s.project_H1(s.solve_fractions_from_entropy(s.h, s.q, s.s)[1] - ql0)
-    plot_func_ice = lambda s: s.project_H1(s.solve_fractions_from_entropy(s.h, s.q, s.s)[2] - qi0)
+    plot_func_vapour = lambda s: s.project_H1(s.solve_fractions_from_entropy(s.h, s.q, s.s)[0])
+    plot_func_liquid = lambda s: s.project_H1(s.solve_fractions_from_entropy(s.h, s.q, s.s)[1])
+    plot_func_ice = lambda s: s.project_H1(s.solve_fractions_from_entropy(s.h, s.q, s.s)[2])
 
     fig_list = [plt.subplots(2, 2, sharex=True, sharey=True, figsize=(7.4, 4.8)) for _ in range(6)]
 
@@ -209,7 +208,19 @@ elif rank == 0:
         for (fig, axs), plot_fun, label in zip(fig_list, pfunc_list, labels):
             ax = axs[i // 2][i % 2]
             ax.tick_params(labelsize=8)
-            im = solver_plot.plot_solution(ax, dim=2, plot_func=plot_fun)
+
+            if label == 'ice':
+                levels = np.linspace(0.0, 7e-3, 1000)
+                cmap = cmap=cmocean.cm.ice
+            elif label == 'entropy':
+                levels = np.linspace(-30, 70, 1000)
+                # levels = 1000
+                cmap = cmap = cmocean.cm.thermal
+            else:
+                levels = 1000
+                cmap = 'nipy_spectral'
+
+            im = solver_plot.plot_solution(ax, dim=2, plot_func=plot_fun, levels=levels, cmap=cmap)
             # if label == 'entropy':
             #     cbar = plt.colorbar(im, ax=ax, format=ticker.FuncFormatter(fmt), label='Entropy (K)')
             # elif label == 'density':
@@ -231,4 +242,3 @@ elif rank == 0:
         plot_name = f'{label}_{exp_name_short}'
         fp = solver_plot.get_filepath(plot_dir, plot_name, ext='png')
         fig.savefig(fp, bbox_inches="tight")
-

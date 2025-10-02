@@ -7,6 +7,7 @@ import time
 import os
 import argparse
 from mpi4py import MPI
+import cmocean
 
 
 comm = MPI.COMM_WORLD
@@ -169,10 +170,24 @@ elif rank == 0:
         solver_plot.load(filepaths)
         energy.append(solver_plot.integrate(solver_plot.energy()))
 
-        for (fig, axs), plot_fun in zip(fig_list, pfunc_list):
+        for (fig, axs), plot_fun, label in zip(fig_list, pfunc_list, labels):
             ax = axs[i // 2][i % 2]
             ax.tick_params(labelsize=8)
-            im = solver_plot.plot_solution(ax, dim=2, plot_func=plot_fun)
+
+            if label == 'vapour':
+                levels = np.linspace(-0.0003, 0.0009, 1000)
+                cmap = cmocean.cm.dense
+                qv = solver_plot.solve_qv_from_entropy(solver_plot.h, solver_plot.q, solver_plot.s) - qv0
+                print(qv.min(), qv.max())
+            elif label == 'entropy':
+                levels = np.linspace(2.533e3, 2.558e3, 1000)
+                cmap = cmocean.cm.thermal
+
+            else:
+                levels = 1000
+                cmap = 'nipy_spectral'
+
+            im = solver_plot.plot_solution(ax, dim=2, plot_func=plot_fun, levels=levels, cmap=cmap)
             cbar = plt.colorbar(im, ax=ax, format=ticker.FuncFormatter(fmt))
             cbar.ax.tick_params(labelsize=8)
 
