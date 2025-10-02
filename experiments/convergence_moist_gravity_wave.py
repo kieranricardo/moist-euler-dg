@@ -8,7 +8,7 @@ import scipy
 
 exp_name_short = 'moist-gravity-wave'
 order = 3
-nproc = 4
+tend = 3600
 
 xlim = 10_000
 zlim = 10_000
@@ -20,7 +20,7 @@ zmap = lambda x, z: z * zlim
 xmap = lambda x, z: xlim * (x - 0.5)
 
 
-def get_solver(nz, order, nproc):
+def get_solver(nz, order, nproc, tend):
     nx = 10 * nz
 
     experiment_name = f'{exp_name_short}-nx-{nx}-nz-{nz}-p{order}'
@@ -28,7 +28,6 @@ def get_solver(nz, order, nproc):
 
     solver = ThreePhaseEuler2D(xmap, zmap, order, nx, g=g, cfl=0.5, a=a, nz=nz, upwind=upwind, nprocx=1)
 
-    tend = 3600
     filepaths = [solver.get_filepath(data_dir, exp_name_short, proc=i, nprocx=nproc, time=tend)
                  for i in range(nproc)]
     solver.load(filepaths)
@@ -91,13 +90,13 @@ def refine(arr_in, interp_mats):
     return arr_out
 
 
-ref_solver = get_solver(64, order=order, nproc=80)
+ref_solver = get_solver(64, order=order, nproc=80, tend=tend)
 nzs = np.array([2, 4, 8, 16, 32])
 
-# ref_solver = get_solver(32, order=order, nproc=64)
+# ref_solver = get_solver(32, order=order, nproc=64, tend=tend)
 # nzs = np.array([2, 4, 8, 16])
 
-solvers = [get_solver(nz, order=order, nproc=2 *nz) for nz in nzs]
+solvers = [get_solver(nz, order=order, nproc=2 *nz, tend=tend) for nz in nzs]
 
 
 var_funcs = [lambda s: (s.u, s.w), lambda s: s.h, lambda s: s.s, lambda s: s.q]
@@ -150,5 +149,8 @@ plt.ylabel('Relative $L^2$ error')
 plt.xlabel('Number of cells')
 start_val = 5 * np.exp(0.5 * (np.log(min_val) + np.log(max_val)))
 plt.loglog(nzs, start_val * nzs[0] ** 3 * (nzs * 1.0) ** (-3), '--', label='3rd order')
+plt.loglog(nzs, 0.01 * start_val * nzs[0] ** 4 * (nzs * 1.0) ** (-4), '--', label='4th order')
 plt.legend()
-plt.savefig(f'plots/convergence-{exp_name_short}.png')
+time = int(tend)
+time_str = f'{(time // 3600)}H{(time % 3600) // 60}m{time % 60}s'
+plt.savefig(f'plots/convergence-{exp_name_short}-time-{time_str}.png')

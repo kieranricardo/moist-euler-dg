@@ -74,7 +74,7 @@ def initial_condition(solver, pert):
     # setup moisture and moist potential temperature/entropy profiles
     mpt_sfc = 300.0 # sft moist potential temp
     N = 0.01 # Brunt-Vaisala frequency
-    qw_sfc = 1e-12 # constant water mass fraction
+    qw_sfc = 1e-15 # constant water mass fraction
     density = dry_density_profile(solver, solver.zs)
 
     mpt_profile = mpt_sfc * np.exp(N ** 2 * solver.zs / solver.g)
@@ -153,7 +153,7 @@ elif rank == 0:
 
     plot_func_mpt = lambda s: s.project_H1(s.moist_potential_temperature(s.s, s.q) - mpt0)
     plot_func_entropy = lambda s: s.project_H1(s.s - s0)
-    plot_func_density = lambda s: s.project_H1(s.h)
+    plot_func_density = lambda s: s.project_H1(s.h - density0)
     plot_func_water = lambda s: s.project_H1(s.q - qw0)
     plot_func_vapour = lambda s: s.project_H1(s.solve_qv_from_entropy(s.h, s.q, s.s) - qv0)
     plot_func_liquid = lambda s: s.project_H1(s.q - s.solve_qv_from_entropy(s.h, s.q, s.s) - ql0)

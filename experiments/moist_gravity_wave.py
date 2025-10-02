@@ -240,7 +240,7 @@ def hr_profiles(solver, p_sfc, mpt_sfc, N, qw_sfc):
     nz_hr = 64
     nx_hr = 1
     solver_hr = TwoPhaseEuler(
-        xmap, zmap, poly_order, nx_hr, g=g, cfl=0.4, a=a, nz=nz_hr, upwind=upwind, nprocx=1
+        xmap, zmap, 6, nx_hr, g=g, cfl=0.4, a=a, nz=nz_hr, upwind=upwind, nprocx=1
     )
 
     density_hr, _ = get_profiles(solver_hr, p_sfc, mpt_sfc, N, qw_sfc)
@@ -255,7 +255,7 @@ def hr_profiles(solver, p_sfc, mpt_sfc, N, qw_sfc):
     density_hr[ip] = density_avg
     density_hr[im] = density_avg
 
-    x_in, _ = utils.gll(solver.order, iterative=True)
+    x_in, _ = utils.gll(solver_hr.order, iterative=True)
     lagrange_polys = []
     for i in range(len(x_in)): 
         x_data = np.zeros_like(x_in)
@@ -328,7 +328,7 @@ water_var_list = []
 
 if run_model:
     solver = TwoPhaseEuler(xmap, zmap, poly_order, nx, g=g, cfl=cfl, a=a, nz=nz, upwind=upwind, nprocx=nproc)
-    u, v, density, s, qw, mpt_profile = initial_condition(solver, pert=1.00)
+    u, v, density, s, qw, mpt_profile = initial_condition(solver, pert=0.01)
     solver.set_initial_condition(u, v, density, s, qw)
 
     for i, tend in enumerate(tends):
@@ -376,7 +376,7 @@ elif rank == 0:
 
     plot_func_mpt = lambda s: s.project_H1(s.moist_potential_temperature(s.s, s.q) - mpt0)
     plot_func_entropy = lambda s: s.project_H1(s.s - s0)
-    plot_func_density = lambda s: s.project_H1(s.h)
+    plot_func_density = lambda s: s.project_H1(s.h - density0)
     plot_func_water = lambda s: s.project_H1(s.q - qw0)
     plot_func_vapour = lambda s: s.project_H1(s.solve_qv_from_entropy(s.h, s.q, s.s) - qv0)
     plot_func_liquid = lambda s: s.project_H1(s.q - s.solve_qv_from_entropy(s.h, s.q, s.s) - ql0)
@@ -421,7 +421,6 @@ elif rank == 0:
                 ax.set_ylabel('z (km)', fontsize='xx-small')
             # fig.tight_layout(w_pad=1.0, h_pad=1.0)
             fig.tight_layout()
-            break
 
     for (fig, ax), label in zip(fig_list, labels):
 
@@ -429,7 +428,6 @@ elif rank == 0:
         fp = solver_plot.get_filepath(plot_dir, plot_name, ext='png')
         print(fp)
         fig.savefig(fp, bbox_inches="tight")
-        break
 
     # full moist pt plot
     plt.figure(figsize=(12, 6))
