@@ -9,11 +9,10 @@
 #PBS -l wd
 #PBS -j oe
 
-module use /g/data/hh5/public/modules
-module load conda/analysis3
-module load openmpi
+module use /g/data/xp65/public/modules
+module load conda/analysis3-25.09
 
-declare -a arr=(8 16 32 64 128)
+declare -a arr=(8 16 32 64)
 export o=3
 
 for nz in ${arr[@]}

@@ -8,7 +8,7 @@ class Euler2D():
 
     nvars = 4
 
-    def __init__(self, xmap, zmap, order, nx, g, cfl=0.5, a=0, nz=None, upwind=True, nprocx=1, top_bc='wall', forcing=None):
+    def __init__(self, xmap, zmap, order, nx, g, cfl=0.5, a=0, nz=None, upwind=True, nprocx=1, top_bc='wall', forcing=None, b=None):
 
         self.order = order
         self.g = g
@@ -19,6 +19,11 @@ class Euler2D():
         self.upwind = upwind
         self.nprocx = nprocx
         self.buoyancy_relax = 1.0
+
+        if b is None:
+            self.b = self.a
+        else:
+            self.b = b
 
         if self.nprocx > 1:
             from mpi4py import MPI
@@ -342,7 +347,7 @@ class Euler2D():
         ip = self.ip_vert_ext
         dhdt[ip] += (0.0 - Fz[ip]) / self.weights_z[-1]
         normal_vel = Fz[ip] / (self.norm_grad_zeta[ip] * h[ip])
-        diss = -2 * self.a * (c_sound[ip] + np.abs(normal_vel)) * normal_vel
+        diss = -2 * self.b * (c_sound[ip] + np.abs(normal_vel)) * normal_vel
         dwdt[ip] += diss / self.weights_z[-1]
 
         energy_diss = Fz[ip] * diss / self.weights_z[-1]
@@ -353,7 +358,7 @@ class Euler2D():
             im = self.im_vert_ext
             dhdt[im] += -(0.0 - Fz[im]) / self.weights_z[-1]
             normal_vel = Fz[im] / (self.norm_grad_zeta[im] * h[im])
-            diss = -2 * self.a * (c_sound[im] + np.abs(normal_vel)) * normal_vel
+            diss = -2 * self.b * (c_sound[im] + np.abs(normal_vel)) * normal_vel
             dwdt[im] += diss / self.weights_z[-1]
 
             energy_diss = Fz[im] * diss / self.weights_z[-1]

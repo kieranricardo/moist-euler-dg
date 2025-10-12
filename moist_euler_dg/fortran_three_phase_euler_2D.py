@@ -89,7 +89,7 @@ class FortranThreePhaseEuler2D(ThreePhaseEuler2D):
             self.D.transpose(), self.weights_z[-1], self.J.ravel(),
             self.grad_xi_2.ravel(), self.grad_xi_dot_zeta.ravel(), self.grad_zeta_2.ravel(),
             self.nx, self.nz, self.order + 1,
-            self.a, float(self.upwind), self.gamma
+            self.a, float(self.upwind), self.gamma, self.b
         )
 
         dudt -= self.g * self.u_grav

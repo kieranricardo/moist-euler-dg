@@ -96,25 +96,42 @@ solvers = [get_solver(n, order=order, nproc=n//2) for n in ns]
 n = 128
 ref_solver = get_solver(n, order=order, nproc=64)
 
-var_funcs = [lambda s: s.u, lambda s: s.w, lambda s: s.h, lambda s: s.s, lambda s: s.q]
-labels = ['u', 'w', 'density', 'entropy', 'water']
+var_funcs = [lambda s: (s.u, s.w), lambda s: s.h, lambda s: s.s, lambda s: s.q]
+labels = ['velocity', 'density', 'entropy', 'water']
 
 max_val = -np.inf
 min_val = np.inf
+dxs = xlim / ns
+print(dxs)
 
 for var_func, label in zip(var_funcs, labels[:-1]):
     errors = []
-    norm = np.sqrt(ref_solver.integrate(var_func(ref_solver) ** 2))
+
+    if label == 'velocity':
+        u_ref, w_ref = var_func(ref_solver)
+        norm = np.sqrt(ref_solver.integrate(u_ref ** 2 + w_ref**2))
+    else:
+        norm = np.sqrt(ref_solver.integrate(var_func(ref_solver) ** 2))
     for solver in solvers:
+        
+        if label == 'velocity':
+            u, w = var_func(solver)
+            while (u.shape[0] < ref_solver.xs.shape[0]):
+                u = refine(u, interp_mats)
+                w = refine(w, interp_mats)
 
-        arr = var_func(solver)
+            assert u.shape == ref_solver.xs.shape
+            assert w.shape == ref_solver.xs.shape
 
-        while (arr.shape[0] < ref_solver.xs.shape[0]):
-            arr = refine(arr, interp_mats)
+            error = np.sqrt(ref_solver.integrate((u - u_ref) ** 2 + (w - w_ref)**2))
+        else:
+            arr = var_func(solver)
+            while (arr.shape[0] < ref_solver.xs.shape[0]):
+                arr = refine(arr, interp_mats)
 
-        assert arr.shape == ref_solver.xs.shape
+            assert arr.shape == ref_solver.xs.shape
 
-        error = np.sqrt(ref_solver.integrate((arr - var_func(ref_solver)) ** 2))
+            error = np.sqrt(ref_solver.integrate((arr - var_func(ref_solver)) ** 2))
         error /= norm
         errors.append(error)
 
@@ -124,12 +141,19 @@ for var_func, label in zip(var_funcs, labels[:-1]):
         if errors[0] < min_val:
             min_val = errors[0]
 
+    print(label, np.diff(np.log(errors)) / np.diff(np.log(ns)))
+    plt.loglog(dxs, errors, 'o-', label=label)
 
-    plt.loglog(ns, errors, 'o-', label=label)
 
 plt.ylabel('Relative $L^2$ error')
-plt.xlabel('Number of cells')
+plt.xlabel('Element size (m)')
 start_val = 5 * np.exp(0.5 * (np.log(min_val) + np.log(max_val)))
-plt.loglog(ns, start_val * ns[0] ** 3 * (ns * 1.0) ** (-3), '--', label='3rd order')
+plt.loglog(dxs, start_val * ns[0] ** 3 * (ns * 1.0) ** (-3), '--', label='3rd order')
 plt.legend()
+xticks = [150, 300, 600, 1200]
+plt.gca().set_xticks(xticks, labels=[str(x) for x in xticks])
+plt.gca().minorticks_off()
+# plt.gca().xaxis.set_minor_formatter(mticker.ScalarFormatter())
+# plt.gca().xaxis.set_major_formatter(mticker.ScalarFormatter())
+plt.grid()
 plt.savefig(f'plots/convergence-{exp_name_short}.png')

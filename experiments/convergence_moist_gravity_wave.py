@@ -15,11 +15,13 @@ xlim = 300_000
 zlim = 10_000
 cfl = 0.5
 g = 9.81
-a = 0.5
+a = 0.0
 upwind = True
 zmap = lambda x, z: z * zlim
 xmap = lambda x, z: xlim * (x - 0.5)
 
+if a == 0:
+    exp_name_short = exp_name_short + '-energy-conserving'
 
 def get_solver(nz, order, nproc, tend):
     nx = 10 * nz
@@ -100,25 +102,27 @@ nzs = np.array([2, 4, 8, 16, 32])
 solvers = [get_solver(nz, order=order, nproc=2 *nz, tend=tend) for nz in nzs]
 
 
-var_funcs = [lambda s: (s.u, s.w), lambda s: s.h, lambda s: s.s, lambda s: s.q]
-labels = ['velocity', 'density', 'entropy', 'water']
+var_funcs = [lambda s: (s.u, s.w), lambda s: s.h, lambda s: s.s, 
+lambda s: s.solve_qv_from_entropy(s.h, s.q, s.s), 
+lambda s: s.q - s.solve_qv_from_entropy(s.h, s.q, s.s)]
+labels = ['Velocity', 'Density', 'Entropy', 'Vapour', 'Liquid']
 
 max_val = -np.inf
 min_val = np.inf
 dxs = xlim / (10 * nzs)
 print(dxs)
 
-for var_func, label in zip(var_funcs, labels[:-1]):
+for var_func, label in zip(var_funcs, labels[:-2]):
     errors = []
 
-    if label == 'velocity':
+    if label == 'Velocity':
         u_ref, w_ref = var_func(ref_solver)
         norm = np.sqrt(ref_solver.integrate(u_ref ** 2 + w_ref**2))
     else:
         norm = np.sqrt(ref_solver.integrate(var_func(ref_solver) ** 2))
     for solver in solvers:
         
-        if label == 'velocity':
+        if label == 'Velocity':
             u, w = var_func(solver)
             while (u.shape[0] < ref_solver.xs.shape[0]):
                 u = refine(u, interp_mats)

@@ -37,10 +37,13 @@ poly_order = args.o
 
 cfl = 0.5
 g = 9.81
-a = 0.5
+a = 0.0
 upwind = True
 
 exp_name_short = 'moist-gravity-wave'
+if a == 0:
+    exp_name_short = exp_name_short + '-energy-conserving'
+    
 experiment_name = f'{exp_name_short}-nx-{nx}-nz-{nz}-p{poly_order}'
 data_dir = os.path.join('data', experiment_name)
 plot_dir = os.path.join('plots', experiment_name)

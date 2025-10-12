@@ -5,13 +5,12 @@
 #PBS -l walltime=0:20:00
 #PBS -l ncpus=64
 #PBS -l mem=100GB
-#PBS -l storage=gdata/hh5+gdata/tm70+gdata/ik11+scratch/kr97
+#PBS -l storage=gdata/xp65+gdata/tm70+gdata/ik11+scratch/kr97
 #PBS -l wd
 #PBS -j oe
 
-module use /g/data/hh5/public/modules
-module load conda/analysis3
-module load openmpi
+module use /g/data/xp65/public/modules
+module load conda/analysis3-25.09
 
 declare -a arr=(8 16 32 64 128)
 export o=3
@@ -24,4 +23,4 @@ do
    python3 smooth_moist_bubble_2D.py --n $nz --nproc $np --plot  --o $o
 done
 
- python3 convergence_ice_moist_bubble.py
+ python3 convergence_smooth_moist_bubble.py

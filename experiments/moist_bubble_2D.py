@@ -29,11 +29,17 @@ nproc = args.nproc
 run_model = (not args.plot) # whether to run model - set false to just plot previous run
 nx = nz
 cfl = 0.5
+a = 0.0
+upwind = False
 g = 9.81
 poly_order = args.o
 
 
 exp_name_short = 'bryan-fritsch-bubble'
+if a == 0.0:
+    exp_name_short = exp_name_short + '-energy-conserving'
+if not upwind:
+     exp_name_short = exp_name_short + '-no-upwind'
 experiment_name = f'{exp_name_short}-nx-{nx}-nz-{nz}-p{poly_order}'
 data_dir = os.path.join('data', experiment_name)
 plot_dir = os.path.join('plots', experiment_name)
@@ -118,9 +124,9 @@ def initial_condition(xs, ys, solver, pert):
     return u, v, density, s, qw, qv
 
 tends = np.array([0, 800, 1000, 1200])
-a = 0.5
+
 if run_model:
-    solver = TwoPhaseEuler2D(xmap, zmap, poly_order, nx, g=g, cfl=cfl, a=a, nz=nz, upwind=True, nprocx=nproc)
+    solver = TwoPhaseEuler2D(xmap, zmap, poly_order, nx, g=g, cfl=cfl, a=a, nz=nz, upwind=upwind, nprocx=nproc)
     u, v, density, s, qw, qv = initial_condition(solver.xs, solver.zs, solver, pert=2.0)
     solver.set_initial_condition(u, v, density, s, qw)
 

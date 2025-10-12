@@ -11,16 +11,16 @@ subroutine solve(&
         D, wz, Ja, &
         grad_xi_2, grad_xi_dot_zeta, grad_zeta_2, &
         nx, nz, n, &
-        a, upwind_flag, gamma &
+        a, upwind_flag, gamma, b &
     )
     real(8), intent(in) :: u(:), w(:), h(:), s(:), q(:), T(:), mu(:), p(:), ie(:)
     real(8), intent(inout) :: dudt(:), dwdt(:), dhdt(:), dsdt(:), dqdt(:)
     real(8), intent(in) :: D(:, :), wz, Ja(:)
     real(8), intent(in) :: grad_xi_2(:), grad_xi_dot_zeta(:), grad_zeta_2(:)
     integer :: nx, nz, n
-    real(8) :: g, a, upwind_flag, gamma
+    real(8) :: g, a, upwind_flag, gamma, b
 
-    real(8) :: Gp, Gm, Tp, Tm, Fxp, Fxm, Fzp, Fzm, norm_grad_contra
+    real(8) :: Gp, Gm, Fxp, Fxm, Fzp, Fzm, norm_grad_contra
     integer :: i, j, k, idx, stride, ip, im, ib
 
     idx = 0
@@ -32,7 +32,7 @@ subroutine solve(&
             D, wz, Ja, &
             grad_xi_2, grad_xi_dot_zeta, grad_zeta_2, &
             nz, n, idx, &
-            a, upwind_flag, gamma &
+            a, upwind_flag, gamma, b &
         )
 
         idx = idx + stride
@@ -84,18 +84,18 @@ subroutine solve_column(&
         D, wz, Ja, &
         grad_xi_2, grad_xi_dot_zeta, grad_zeta_2, &
         nz, n, idx_start, &
-        a, upwind_flag, gamma &
+        a, upwind_flag, gamma, b &
     )
     real(8), intent(in) :: u(:), w(:), h(:), s(:), q(:), T(:), mu(:), p(:), ie(:)
     real(8), intent(inout) :: dudt(:), dwdt(:), dhdt(:), dsdt(:), dqdt(:)
     real(8), intent(in) :: D(:, :), wz, Ja(:)
     real(8), intent(in) :: grad_xi_2(:), grad_xi_dot_zeta(:), grad_zeta_2(:)
     integer :: nz, n, idx_start
-    real(8) :: a, upwind_flag, gamma
+    real(8) :: a, upwind_flag, gamma, b
 
     integer :: il, j, k, l, m, idx, ip, im, ib, imx, imz
     real(8) :: Fz(n, n), Fx(n, n), GG(n, n)
-    real(8) :: Gp, Gm, Tp, Tm, Fxp, Fxm, Fzp, Fzm
+    real(8) :: Gp, Gm, Fxp, Fxm, Fzp, Fzm
     real(8) :: enthalpy, norm_grad_contra, normal_vel_p, normal_vel_m, c_snd
     real(8) :: dsdx, dsdz, dqdx, dqdz, vort, Jinv, divF, divsF, divqF
 
@@ -214,7 +214,7 @@ subroutine solve_column(&
         c_snd = sqrt(gamma * p(ip) / h(ip))
         normal_vel_p = Fzp / (norm_grad_contra * h(ip))
         ! 0.5 used to be a here
-        dwdt(ip) = dwdt(ip) - 2 * a * (c_snd + abs(normal_vel_p)) * normal_vel_p / wz
+        dwdt(ip) = dwdt(ip) - 2 * b * (c_snd + abs(normal_vel_p)) * normal_vel_p / wz
     end do
 
     do k=1,n
@@ -225,7 +225,7 @@ subroutine solve_column(&
 
         c_snd = sqrt(gamma * p(im) / h(im))
         normal_vel_m = Fzm / (norm_grad_contra * h(im))
-        dwdt(im) = dwdt(im) - 2 * a * (c_snd + abs(normal_vel_m)) * normal_vel_m / wz
+        dwdt(im) = dwdt(im) - 2 * b * (c_snd + abs(normal_vel_m)) * normal_vel_m / wz
     end do
 
 end subroutine
