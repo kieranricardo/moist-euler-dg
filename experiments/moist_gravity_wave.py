@@ -37,7 +37,7 @@ poly_order = args.o
 
 cfl = 0.5
 g = 9.81
-a = 0.0
+a = 0.5
 upwind = True
 
 exp_name_short = 'moist-gravity-wave'
@@ -279,16 +279,16 @@ def hr_profiles(solver, p_sfc, mpt_sfc, N, qw_sfc):
         
         return out
 
-    # zs_eval = np.linspace(0, 10_000, 1000)
-    # density_eval = []
-    # for z in zs_eval:
-    #     density_eval.append(_eval_solution_at_point(z, density_hr, dz_hr))
+    zs_eval = np.linspace(0, 10_000, 1000)
+    density_eval = []
+    for z in zs_eval:
+        density_eval.append(_eval_solution_at_point(z, density_hr, dz_hr))
         
-    # poly_fit = np.polynomial.chebyshev.Chebyshev.fit(zs_eval, density_eval, deg=5)
-    # density_lr = poly_fit(solver.zs[0, :, 0].ravel())
-    density_lr = []
-    for z in solver.zs[0, :, 0].ravel():
-        density_lr.append(_eval_solution_at_point(z, density_hr, dz_hr))
+    poly_fit = np.polynomial.chebyshev.Chebyshev.fit(zs_eval, density_eval, deg=5)
+    density_lr = poly_fit(solver.zs[0, :, 0].ravel())
+    # density_lr = []
+    # for z in solver.zs[0, :, 0].ravel():
+    #     density_lr.append(_eval_solution_at_point(z, density_hr, dz_hr))
         
     return np.array(density_lr), solver.zs[0, :, 0].ravel()
 
@@ -328,7 +328,8 @@ def initial_condition(solver, pert):
     return u, v, density, s, qw, mpt_profile
 
 
-tends = np.array([0.0, 1200, 2400, 3600])
+# tends = np.array([0.0, 1200, 2400, 3600])
+tends = np.array(list(np.arange(10) / 1000) + list(np.arange(1, 11) / 100)) * 100
 
 conservation_data_fp = os.path.join(data_dir, 'conservation_data.npy')
 time_list = []
@@ -354,6 +355,7 @@ if run_model:
         t1 = time.time()
 
         if rank == 0:
+            print('Solver default dt:', solver.get_dt())
             print("Simulation time (s):", solver.time)
             print("Wall time:", time.time() - t0, '\n')
 
@@ -370,6 +372,8 @@ if run_model:
         print('Energy error:', (energy_list[-1] - energy_list[0]) / energy_list[0])
 
 elif rank == 0:
+    tends = np.arange(1, 5) / 100
+
     plt.rcParams['font.size'] = '12'
 
     solver_plot = TwoPhaseEuler(xmap, zmap, poly_order, nx, g=g, cfl=0.5, a=a, nz=nz, upwind=upwind, nprocx=1)
@@ -390,18 +394,22 @@ elif rank == 0:
     plot_func_water = lambda s: s.project_H1(s.q - qw0)
     plot_func_vapour = lambda s: s.project_H1(s.solve_qv_from_entropy(s.h, s.q, s.s) - qv0)
     plot_func_liquid = lambda s: s.project_H1(s.q - s.solve_qv_from_entropy(s.h, s.q, s.s) - ql0)
+    plot_func_u = lambda s: s.project_H1(s.u)
+    plot_func_w = lambda s: s.project_H1(s.w)
 
-    fig_list = [plt.subplots(2, 2, sharex=True, sharey=True, figsize=(7.4, 4.8)) for _ in range(6)]
+    fig_list = [plt.subplots(2, 2, sharex=True, sharey=True, figsize=(7.4, 4.8)) for _ in range(8)]
     pfunc_list = [
         plot_func_mpt, plot_func_entropy, plot_func_density,
         plot_func_water, plot_func_vapour, plot_func_liquid,
+        plot_func_u, plot_func_w
     ]
 
-    labels = ["moist_potential_temperature", "entropy", "density", "water", "vapour", "liquid"]
+    labels = ["moist_potential_temperature", "entropy", "density", "water", "vapour", "liquid", "u", "w"]
 
     energy = []
     for i, tend in enumerate(tends):
         filepaths = [solver_plot.get_filepath(data_dir, exp_name_short, proc=i, nprocx=nproc, time=tend) for i in range(nproc)]
+        print(filepaths[0])
         solver_plot.load(filepaths)
         energy.append(solver_plot.integrate(solver_plot.energy()))
 

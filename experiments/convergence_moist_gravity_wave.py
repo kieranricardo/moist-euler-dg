@@ -9,13 +9,13 @@ import matplotlib.ticker as mticker
 
 exp_name_short = 'moist-gravity-wave'
 order = 3
-tend = 3600
+tend = 0.01
 
 xlim = 300_000
 zlim = 10_000
 cfl = 0.5
 g = 9.81
-a = 0.0
+a = 0.5
 upwind = True
 zmap = lambda x, z: z * zlim
 xmap = lambda x, z: xlim * (x - 0.5)
@@ -93,19 +93,19 @@ def refine(arr_in, interp_mats):
     return arr_out
 
 
-ref_solver = get_solver(64, order=order, nproc=80, tend=tend)
+ref_solver = get_solver(64, order=order, nproc=4, tend=tend)
 nzs = np.array([2, 4, 8, 16, 32])
 
 # ref_solver = get_solver(32, order=order, nproc=64, tend=tend)
 # nzs = np.array([2, 4, 8, 16])
 
-solvers = [get_solver(nz, order=order, nproc=2 *nz, tend=tend) for nz in nzs]
+solvers = [get_solver(nz, order=order, nproc=4, tend=tend) for nz in nzs]
 
 
-var_funcs = [lambda s: (s.u, s.w), lambda s: s.h, lambda s: s.s, 
+var_funcs = [lambda s: s.u, lambda s: s.w, lambda s: s.h, lambda s: s.s,
 lambda s: s.solve_qv_from_entropy(s.h, s.q, s.s), 
 lambda s: s.q - s.solve_qv_from_entropy(s.h, s.q, s.s)]
-labels = ['Velocity', 'Density', 'Entropy', 'Vapour', 'Liquid']
+labels = ['u', 'w', 'Density', 'Entropy', 'Vapour', 'Liquid']
 
 max_val = -np.inf
 min_val = np.inf
@@ -115,31 +115,20 @@ print(dxs)
 for var_func, label in zip(var_funcs, labels[:-2]):
     errors = []
 
-    if label == 'Velocity':
-        u_ref, w_ref = var_func(ref_solver)
+    if label in ('u', 'w'):
+        u_ref, w_ref = ref_solver.u, ref_solver.w
         norm = np.sqrt(ref_solver.integrate(u_ref ** 2 + w_ref**2))
     else:
         norm = np.sqrt(ref_solver.integrate(var_func(ref_solver) ** 2))
     for solver in solvers:
-        
-        if label == 'Velocity':
-            u, w = var_func(solver)
-            while (u.shape[0] < ref_solver.xs.shape[0]):
-                u = refine(u, interp_mats)
-                w = refine(w, interp_mats)
 
-            assert u.shape == ref_solver.xs.shape
-            assert w.shape == ref_solver.xs.shape
+        arr = var_func(solver)
+        while (arr.shape[0] < ref_solver.xs.shape[0]):
+            arr = refine(arr, interp_mats)
 
-            error = np.sqrt(ref_solver.integrate((u - u_ref) ** 2 + (w - w_ref)**2))
-        else:
-            arr = var_func(solver)
-            while (arr.shape[0] < ref_solver.xs.shape[0]):
-                arr = refine(arr, interp_mats)
+        assert arr.shape == ref_solver.xs.shape
 
-            assert arr.shape == ref_solver.xs.shape
-
-            error = np.sqrt(ref_solver.integrate((arr - var_func(ref_solver)) ** 2))
+        error = np.sqrt(ref_solver.integrate((arr - var_func(ref_solver)) ** 2))
         error /= norm
         errors.append(error)
 
@@ -169,3 +158,4 @@ plt.gca().minorticks_off()
 plt.grid()
 
 plt.savefig(f'plots/convergence-{exp_name_short}-time-{time_str}.png')
+plt.show()

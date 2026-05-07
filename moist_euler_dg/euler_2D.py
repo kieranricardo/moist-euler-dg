@@ -729,8 +729,11 @@ class Euler2D():
         if nprocx is None:
             nprocx = self.nprocx  # might be more convenient to use size
 
-        time = int(time)
-        time_str = f'{(time // 3600)}H{(time % 3600) // 60}m{time % 60}s'
+        if time >= 1:
+            time = int(time)
+            time_str = f'{(time // 3600)}H{(time % 3600) // 60}m{time % 60}s'
+        else:
+            time_str = f'{int(time * 1000)}ms'
 
         if self.rank == 0:
             if not os.path.exists(data_dir):
