@@ -51,6 +51,26 @@ zmap = lambda x, z: z * zlim
 xmap = lambda x, z: xlim * (x - 0.5)
 
 
+def forcing_function(solver, state, dstatedt):
+    u, w, h, s, qv, ql, qi = solver.get_vars(state)
+    dudt, dwdt, dhdt, dsdt, dqvdt, dqldt, dqidt = solver.get_vars(dstatedt)
+
+    # simple scheme - always moving towards equilibrium
+    qw = qv + ql + qi
+
+    qv_eq, ql_eq, qi_eq = solver.solve_fractions_from_entropy(h, qw, s)
+
+    time_scale = 4.0
+
+    dqvdt += (qv_eq - qv) / time_scale
+    dqldt += (ql_eq - ql) / time_scale
+    dqidt += (qi_eq - qi) / time_scale
+
+    # TODO: add heating terms in dsdt
+    # dsdt += energy balance terms
+
+
+
 def initial_condition(xs, ys, solver, pert):
     u = 0 * ys
     v = 0 * ys
@@ -106,7 +126,11 @@ entropy_var_list = []
 water_var_list = []
 
 if run_model:
-    solver = NonEqEuler2D(xmap, zmap, poly_order, nx, g=g, cfl=cfl, a=a, nz=nz, upwind=upwind, nprocx=nproc)
+    solver = NonEqEuler2D(
+        xmap, zmap, poly_order, nx,
+        g=g, cfl=cfl, a=a, nz=nz, upwind=upwind, nprocx=nproc,
+        forcing=forcing_function
+    )
     u, v, density, s, qw, qv, ql, qi = initial_condition(solver.xs, solver.zs, solver, pert=2.0)
     solver.set_initial_condition(u, v, density, s, qv, ql, qi)
     for i, tend in enumerate(tends):
