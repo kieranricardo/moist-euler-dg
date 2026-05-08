@@ -62,13 +62,18 @@ def forcing_function(solver, state, dstatedt):
 
     time_scale = 4.0
 
-    dqvdt += (qv_eq - qv) / time_scale
-    dqldt += (ql_eq - ql) / time_scale
-    dqidt += (qi_eq - qi) / time_scale
+    dqvdt_microphysics = (qv_eq - qv) / time_scale
+    dqldt_microphysics = (ql_eq - ql) / time_scale
+    dqidt_microphysics = (qi_eq - qi) / time_scale
 
-    # TODO: add heating terms in dsdt
-    # dsdt += energy balance terms
+    # add heating terms in dsdt
+    enthalpy, T, p, ie, mu_v, mu_l, mu_i = solver.get_thermodynamic_quantities(h, s, qv, ql, qi)
+    dsdt_microphysics = -(mu_v * dqvdt_microphysics + mu_l * dqldt_microphysics + mu_i * dqidt_microphysics) / T
 
+    dsdt += dsdt_microphysics
+    dqvdt += dqvdt_microphysics
+    dqldt += dqldt_microphysics
+    dqidt += dqidt_microphysics
 
 
 def initial_condition(xs, ys, solver, pert):
