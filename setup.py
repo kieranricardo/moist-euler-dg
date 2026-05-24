@@ -13,7 +13,7 @@ sys.modules["distutils.msvccompiler"] = msvccompiler_stub
 
 from distutils.core import setup
 import site
-from numpy.distutils.core import setup, Extension
+# from numpy.distutils.core import setup, Extension
 
 site.ENABLE_USER_SITE = True
 
@@ -35,11 +35,11 @@ setup(
     author='Kieran Ricardo',
     author_email='',
     description='',
-    ext_modules=[
-        Extension(name="_moist_euler_dg",
-                sources=sources,
-                extra_f90_compile_args=gnu_f90flags,
-                f2py_options=['--verbose'],
-                ),
-    ]
+    # ext_modules=[
+    #     Extension(name="_moist_euler_dg",
+    #             sources=sources,
+    #             extra_f90_compile_args=gnu_f90flags,
+    #             f2py_options=['--verbose'],
+    #             ),
+    # ]
 )
