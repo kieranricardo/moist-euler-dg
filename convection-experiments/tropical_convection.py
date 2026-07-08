@@ -15,7 +15,7 @@ import matplotlib.ticker as ticker
 # test case parameters
 domain_width = 10_000 # width of domain in metres
 domain_height = 10_000 # height of domain in metres
-run_time = 3600 * 6 # total run time in seconds
+run_time = 3600 * 1 # total run time in seconds
 
 p_surface = 1_00_000.0 # surface pressure in Pa
 SST = 300 # sea surface temperature in Kelvin
@@ -160,8 +160,10 @@ def tropical_rce_initial_condition(
     # ---------------------------------------------------------------------
     if add_noise:
         rng = np.random.default_rng(seed + rank)
-
-        T[:, 0, :, 0] += 0.1 * rng.uniform(-1.0, 1.0, size=T[:, 0, :, 0].shape) * abs(T[:, 0, :, 0])
+        for i in range(noise_layers):
+            ii = i // (poly_order + 1)
+            jj = i % (poly_order + 1)
+            T[:, ii, :, jj] += 0.1 * rng.uniform(-1.0, 1.0, size=T[:, 0, :, 0].shape) * abs(T[:, 0, :, 0])
 
         # Update virtual temperature and density consistently with perturbed T
         Tv = T * (1.0 + 0.608 * qv)
