@@ -159,9 +159,9 @@ def tropical_rce_initial_condition(
     # Small low-level thermal noise
     # ---------------------------------------------------------------------
     if add_noise:
-        rng = np.random.default_rng(seed)
+        rng = np.random.default_rng(seed + rank)
 
-        T[:, 0, :, 0] += 0.1 * rng.uniform(-1.0, 1.0, size=T[:, 0, :, 0].shape)
+        T[:, 0, :, 0] += 0.1 * rng.uniform(-1.0, 1.0, size=T[:, 0, :, 0].shape) * abs(T[:, 0, :, 0])
 
         # Update virtual temperature and density consistently with perturbed T
         Tv = T * (1.0 + 0.608 * qv)
@@ -197,6 +197,9 @@ if run_model:
         upwind=upwind, nprocx=nproc, forcing=None, b=0.5, sst=SST
     )
     u, v, density, s, qw, T = tropical_rce_initial_condition(solver, add_noise=True)
+    # np.random.seed(42 + rank)
+    # noise = 2 * (np.random.random(density.shape) - 0.5)
+    # density += 0.01 * density * noise
     solver.set_initial_condition(u, v, density, s, qw)
     # plt.figure(1)
     # plt.title('Temperature')
