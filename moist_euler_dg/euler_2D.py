@@ -8,7 +8,7 @@ class Euler2D():
 
     nvars = 4
 
-    def __init__(self, xmap, zmap, order, nx, g, cfl=0.5, a=0, nz=None, upwind=True, nprocx=1, top_bc='wall', forcing=None, b=None):
+    def __init__(self, xmap, zmap, order, nx, g, cfl=0.5, a=0, nz=None, upwind=True, nprocx=1, top_bc='wall', forcing=None, b=None, sst=None):
 
         self.order = order
         self.g = g
@@ -19,6 +19,7 @@ class Euler2D():
         self.upwind = upwind
         self.nprocx = nprocx
         self.buoyancy_relax = 1.0
+        self.sst = sst
 
         if b is None:
             self.b = self.a
