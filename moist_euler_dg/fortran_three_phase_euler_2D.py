@@ -113,12 +113,12 @@ class FortranThreePhaseEuler2D(ThreePhaseEuler2D):
             s_bdry = self.entropy_vapour(self.sst, qw_bdry, h_bdry)
             mask = normal_vel > 0
             water_mass_flux = h[ip] * normal_vel * (qw_bdry - q[ip]) / (1 - q[ip])
-            water_mass_flux *= mask
+            water_mass_flux *= mask * (qw_bdry > q[ip])
 
             # evaporation
             dhdt[ip] += water_mass_flux / self.weights_z[-1] # - normal_vel * h[ip]
-            # dqdt[ip] += (1 / h[ip]) * water_mass_flux * (1 - q[ip]) / self.weights_z[-1]
-            dqdt[ip] += normal_vel * (qw_bdry - q[ip]) * mask / self.weights_z[-1]
+            dqdt[ip] += (1 / h[ip]) * water_mass_flux * (1 - q[ip]) / self.weights_z[-1]
+            # dqdt[ip] += normal_vel * (qw_bdry - q[ip]) * mask / self.weights_z[-1]
             # check this - I think it's slightly off
             dsdt[ip] += (1 / h[ip]) * water_mass_flux * (s_bdry - s[ip]) / self.weights_z[-1]
 
