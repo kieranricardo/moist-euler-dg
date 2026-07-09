@@ -95,6 +95,40 @@ class FortranThreePhaseEuler2D(ThreePhaseEuler2D):
         dudt -= self.g * self.u_grav
         dwdt -= self.g * self.w_grav
 
+        if self.sst is not None:
+            assert self.sst > self.T0
+
+            ip = self.ip_vert_ext
+            normal_vel = (self.grad_xi_dot_zeta[ip] * u[ip] + self.grad_zeta_2[ip] * w[ip])
+
+            # density_dry = h[ip] * (1 - q[ip])
+            # density_vapour = self.saturation_fraction(self.sst, 1.0)
+            # h_bdry = density_dry + density_vapour
+            # qw_bdry = density_vapour / h_bdry
+
+            density_dry = h[ip] * (1 - q[ip])
+            density_vapour = self.saturation_fraction(self.sst, 1.0)
+            h_bdry = density_dry + density_vapour
+            qw_bdry = density_vapour / h_bdry
+            s_bdry = self.entropy_vapour(self.sst, qw_bdry, h_bdry)
+            mask = normal_vel > 0
+            water_mass_flux = h[ip] * normal_vel * (qw_bdry - q[ip]) / (1 - q[ip])
+            water_mass_flux *= mask
+
+            # evaporation
+            dhdt[ip] += water_mass_flux / self.weights_z[-1] # - normal_vel * h[ip]
+            # dqdt[ip] += (1 / h[ip]) * water_mass_flux * (1 - q[ip]) / self.weights_z[-1]
+            dqdt[ip] += normal_vel * (qw_bdry - q[ip]) * mask / self.weights_z[-1]
+            # check this - I think it's slightly off
+            dsdt[ip] += (1 / h[ip]) * water_mass_flux * (s_bdry - s[ip]) / self.weights_z[-1]
+
+            # sensible heat flux
+            s_bdry = self.entropy(h[ip], q[ip], T=self.sst)
+            dsdt[ip] += normal_vel * (s_bdry - s[ip]) * mask / self.weights_z[-1]
+
+            u_bdry = 0
+            dudt[ip] += normal_vel * (u_bdry - u[ip]) * mask / self.weights_z[-1]
+
     def _solve_horz_boundaries(self, state, dstatedt):
 
         u, w, h, s, q, T, mu, p, ie = self.get_vars(state)

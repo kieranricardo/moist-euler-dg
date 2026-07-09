@@ -42,12 +42,8 @@ class ThreePhaseEuler2D(TwoPhaseEuler2D):
         Ls0_ = 2.834e6
         Lf0_ = Ls0_ - Lv0_
 
-        self.Lv0 = Lv0_ + (self.cpv - self.cl) * self.T0
-        self.Ls0 = Ls0_ + (self.cpv - self.ci) * self.T0
-        self.Lf0 = self.Ls0 - self.Lv0  # = Lf0 + (self.ci - self.cl) * self.T0
-
-        self.Lv0 = Lv0_ + (self.cpv - self.cl) * self.T0
-        self.Ls0 = Ls0_ + (self.cpv - self.ci) * self.T0
+        self.Lv0 = Lv0_ - (self.cpv - self.cl) * self.T0
+        self.Ls0 = Ls0_ - (self.cpv - self.ci) * self.T0
         self.Lf0 = self.Ls0 - self.Lv0
 
         self.c0 = self.cpv + (self.Ls0 / self.T0) - self.cvv * self.logT0 + self.Rv * np.log(self.rho0)

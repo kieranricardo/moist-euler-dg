@@ -1,0 +1,13 @@
+option(
+  'native',
+  type: 'boolean',
+  value: true,
+  description: 'Build Fortran sources with -march=native when the compiler supports it.',
+)
+
+option(
+  'fast-math',
+  type: 'boolean',
+  value: true,
+  description: 'Build Fortran sources with -ffast-math when the compiler supports it.',
+)
