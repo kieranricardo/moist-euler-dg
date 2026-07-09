@@ -9,9 +9,8 @@
 #PBS -l wd
 #PBS -j oe
 
-module use /g/data/hh5/public/modules
-module load conda/analysis3
-module load openmpi
+module use /g/data/xp65/public/modules
+module load conda/analysis3-26.05
 
 export n=32
 export np=16

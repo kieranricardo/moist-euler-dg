@@ -15,7 +15,7 @@ import matplotlib.ticker as ticker
 # test case parameters
 domain_width = 10_000 # width of domain in metres
 domain_height = 10_000 # height of domain in metres
-run_time = 3600 * 1 # total run time in seconds
+run_time = 3600 * 6 # total run time in seconds
 
 p_surface = 1_00_000.0 # surface pressure in Pa
 SST = 300 # sea surface temperature in Kelvin
@@ -65,6 +65,17 @@ if rank == 0:
 
 comm.barrier()
 
+
+def constant_cooling_forcing(solver, state, dstatedt):
+    u, w, h, s, q, T, mu, p, ie = solver.get_vars(state)
+    dudt, dwdt, dhdt, dsdt, dqdt, *_ = solver.get_vars(dstatedt)
+
+    # internal cooling
+    # y = (solver.zs - boundary_layer_top) / (solver.zs.max() - boundary_layer_top)
+    T_forcing = -cooling_rate # * y**2 * (solver.zs >= boundary_layer_top)  # constantly cool at a rate of 1K per day
+    s_forcing = T_forcing * solver.cvd / T  # convert temperature forcing to entropy forcing
+
+    dsdt += s_forcing
 
 
 def tropical_rce_initial_condition(
@@ -196,7 +207,7 @@ conservation_data_fp = os.path.join(data_dir, 'conservation_data.npy')
 if run_model:
     solver = FortranThreePhaseEuler2D(
         xmap, zmap, order=poly_order, nx=nx, g=g, cfl=0.5, a=a, nz=nz,
-        upwind=upwind, nprocx=nproc, forcing=None, b=0.5, sst=SST
+        upwind=upwind, nprocx=nproc, forcing=constant_cooling_forcing, b=0.5, sst=SST
     )
     u, v, density, s, qw, T = tropical_rce_initial_condition(solver, add_noise=True)
     # np.random.seed(42 + rank)
