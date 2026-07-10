@@ -101,16 +101,11 @@ class FortranThreePhaseEuler2D(ThreePhaseEuler2D):
             ip = self.ip_vert_ext
             normal_vel = (self.grad_xi_dot_zeta[ip] * u[ip] + self.grad_zeta_2[ip] * w[ip])
 
-            # density_dry = h[ip] * (1 - q[ip])
-            # density_vapour = self.saturation_fraction(self.sst, 1.0)
-            # h_bdry = density_dry + density_vapour
-            # qw_bdry = density_vapour / h_bdry
-
             qv_sat = self.saturation_fraction(T[ip], h[ip])
             qv = np.minimum(qv_sat, q[ip])
 
-            density_dry = h[ip] * (1 - q[ip]) # use lowest level level dry density
-            density_vapour = self.saturation_density(self.sst) # use saturate vapour density at sst
+            density_dry = h[ip] * (1 - q[ip]) # use lowest level dry density
+            density_vapour = self.saturation_density(self.sst) # use saturated vapour density at SST
             h_bdry = density_dry + density_vapour
             qv_bdry = density_vapour / h_bdry
 
@@ -128,8 +123,8 @@ class FortranThreePhaseEuler2D(ThreePhaseEuler2D):
             # evaporation
             dhdt[ip] += water_mass_flux / self.weights_z[-1] # - normal_vel * h[ip]
             dqdt[ip] += (1 / h[ip]) * water_mass_flux * (1 - q[ip]) / self.weights_z[-1]
-            # check this - I think it's slightly off
-            dsdt[ip] += (1 / h[ip]) * water_mass_flux * (s_bdry - s[ip]) / self.weights_z[-1]
+            # TODO: add this back in
+            dsdt[ip] += (1 / h[ip]) * water_mass_flux * (water_mass_flux > 0) * (s_bdry - s[ip]) / self.weights_z[-1]
 
             # sensible heat flux
             s_bdry = self.entropy(h[ip], q[ip], T=self.sst)
