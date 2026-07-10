@@ -106,19 +106,28 @@ class FortranThreePhaseEuler2D(ThreePhaseEuler2D):
             # h_bdry = density_dry + density_vapour
             # qw_bdry = density_vapour / h_bdry
 
-            density_dry = h[ip] * (1 - q[ip])
-            density_vapour = self.saturation_fraction(self.sst, 1.0)
+            qv_sat = self.saturation_fraction(T[ip], h[ip])
+            qv = np.minimum(qv_sat, q[ip])
+
+            density_dry = h[ip] * (1 - q[ip]) # use lowest level level dry density
+            density_vapour = self.saturation_density(self.sst) # use saturate vapour density at sst
             h_bdry = density_dry + density_vapour
-            qw_bdry = density_vapour / h_bdry
-            s_bdry = self.entropy_vapour(self.sst, qw_bdry, h_bdry)
+            qv_bdry = density_vapour / h_bdry
+
             mask = normal_vel > 0
-            water_mass_flux = h[ip] * normal_vel * (qw_bdry - q[ip]) / (1 - q[ip])
-            water_mass_flux *= mask * (qw_bdry > q[ip])
+            water_mass_flux = h[ip] * normal_vel * (qv_bdry - qv) / (1 - q[ip])
+            water_mass_flux *= mask
+
+            # if qv_bdry > qv, positive vapour mass flux
+            # use entropy of vapour at sst (this enters the domain)
+            s_bdry = self.entropy_vapour(self.sst, qv_bdry, h_bdry) * (qv_bdry > qv)
+            # if qv_bdry < qv, negative vapour mass flux
+            # use entropy of vapour at lowest level (this leaves the domain)
+            s_bdry += self.entropy_vapour(T[ip], qv, h[ip]) * (qv_bdry <= qv)
 
             # evaporation
             dhdt[ip] += water_mass_flux / self.weights_z[-1] # - normal_vel * h[ip]
             dqdt[ip] += (1 / h[ip]) * water_mass_flux * (1 - q[ip]) / self.weights_z[-1]
-            # dqdt[ip] += normal_vel * (qw_bdry - q[ip]) * mask / self.weights_z[-1]
             # check this - I think it's slightly off
             dsdt[ip] += (1 / h[ip]) * water_mass_flux * (s_bdry - s[ip]) / self.weights_z[-1]
 
